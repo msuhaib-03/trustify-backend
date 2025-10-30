@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: trustify-backend
+
+  data:
+    mongodb:
+      uri: mongodb+srv://muhammadsuhaib2805:8c4Y3ES1UilAXrT1@trustify.nwckntf.mongodb.net/trustify?retryWrites=true&w=majority&appName=Trustify
+      database: trustify
+      auto-index-creation: true
+
+  mail:
+    host: smtp.gmail.com
+    port: 465
+    username: muhammadsuhaib2805@gmail.com
+    password: tkju guyf dglg vxfn  # app password only (never your real password)
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            port: 465
+            class: javax.net.ssl.SSLSocketFactory
+            fallback: false
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    com.trustify: INFO
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
