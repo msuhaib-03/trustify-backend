@@ -3,6 +3,7 @@ package com.trustify.service;
 import com.trustify.dto.UserRequestDTO;
 import com.trustify.dto.UserResponseDTO;
 import com.trustify.exception.ResourceAlreadyExistsException;
+import com.trustify.exception.ResourceNotFoundException;
 import com.trustify.model.User;
 import com.trustify.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,14 @@ public class UserService {
                 .build();
 
         userRepository.save(user);
+        return convertToResponse(user);
+    }
+
+    // ✅ NEW METHOD: Fetch single user by ID
+    public UserResponseDTO getUserById(String id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + id));
+
         return convertToResponse(user);
     }
 

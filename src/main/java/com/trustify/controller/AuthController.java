@@ -6,6 +6,7 @@ import com.trustify.dto.SignupRequest;
 import com.trustify.model.User;
 import com.trustify.repository.UserRepository;
 import com.trustify.security.JwtUtil;
+import com.trustify.service.CustomUserDetailsService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +24,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
+
+    @Autowired
+    private CustomUserDetailsService customUserDetailsService;
 
     @Autowired
     private AuthenticationManager authenticationManager;
@@ -77,7 +82,9 @@ public class AuthController {
     // ✅ Token Validation (for Postman testing)
     @GetMapping("/validate-test")
     public ResponseEntity<?> validateTokenParam(@RequestParam String token) {
-        boolean isValid = jwtUtil.validateToken(token);
+        String username = jwtUtil.extractUsername(token);
+        UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
+        boolean isValid = jwtUtil.validateToken(token, userDetails);
         return ResponseEntity.ok(Collections.singletonMap("valid", isValid));
     }
 
@@ -88,12 +95,14 @@ public class AuthController {
         }
 
         String token = authHeader.substring(7);
+        String username = jwtUtil.extractUsername(token);
+        var userDetails = customUserDetailsService.loadUserByUsername(username);
 
-        if (!jwtUtil.validateToken(token)) {
+        boolean isValid = jwtUtil.validateToken(token, userDetails);
+
+        if (!isValid) {
             throw new RuntimeException("Invalid or expired token");
         }
-
-        String username = jwtUtil.extractUsername(token);
 
         return Map.of(
                 "valid", true,
