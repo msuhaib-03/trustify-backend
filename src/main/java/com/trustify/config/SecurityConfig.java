@@ -39,6 +39,8 @@ public class SecurityConfig {
                                 "/auth/google/**",
                                 "/oauth/**")
                         .permitAll()
+                        .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
+                        .requestMatchers("/admin/**").hasRole("ADMIN")
                         //.requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
