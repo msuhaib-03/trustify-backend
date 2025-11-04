@@ -37,6 +37,7 @@ public class SecurityConfig {
                                 "/auth/**",
                                 "/users/**",
                                 "/auth/google/**",
+                                "/listings/**",
                                 "/oauth/**")
                         .permitAll()
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
