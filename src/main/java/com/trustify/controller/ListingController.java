@@ -4,6 +4,8 @@ import com.trustify.dto.ListingDTO;
 import com.trustify.model.Listing;
 import com.trustify.service.ImageUploadService;
 import com.trustify.service.ListingService;
+import com.trustify.service.impl.ListingServiceImpl;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,8 +24,10 @@ import java.util.Map;
 public class ListingController {
     private final ListingService listingService;
     private final ImageUploadService imageUploadService;
+    private final ListingServiceImpl listingServiceImpl;
 
 
+    // Auth required
     @PostMapping("/create")
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<?> createListing(
@@ -59,14 +63,27 @@ public class ListingController {
         }
     }
 
+    // no auth required
     @GetMapping
     public ResponseEntity<?> getAllListings() {
         return ResponseEntity.ok(listingService.getAllActiveListings());
     }
 
+    // no auth required
     @GetMapping("/{id}")
-    public ResponseEntity<?> getListingById(@PathVariable String id) {
-        return ResponseEntity.ok(listingService.getListingById(id));
+    public ResponseEntity<ListingDTO> getListingById(@PathVariable String id, HttpServletRequest request) {
+        Listing listing = listingService.getListingById(id);
+
+        ListingDTO dto = new ListingDTO();
+        dto.setTitle(listing.getTitle());
+        dto.setDescription(listing.getDescription());
+        dto.setPrice(listing.getPrice());
+        dto.setType(listing.getType());
+        dto.setCategory(listing.getCategory());
+        dto.setImageUrls(listingServiceImpl.buildFullImageUrls(listing.getImageUrls(), request));
+
+        return ResponseEntity.ok(dto);
+      //  return ResponseEntity.ok(listingService.getListingById(id));
     }
 
     // This endpoint allows users to delete their own listings by id and bearer token has to be provided
@@ -94,5 +111,39 @@ public class ListingController {
             return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
         }
     }
+
+    // no auth required
+    @GetMapping("/rent")
+    public ResponseEntity<List<Listing>> getAllRentListings() {
+        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.RENT));
+    }
+
+    // no auth required
+    @GetMapping("/sell")
+    public ResponseEntity<List<Listing>> getAllSellListings() {
+        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.SALE));
+    }
+
+    // no auth required
+    @GetMapping("/search")
+    public ResponseEntity<List<Listing>> searchListings(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Listing.ListingType type,
+            @RequestParam(required = false) Double priceMax
+    ) {
+        return ResponseEntity.ok(listingService.searchListings(
+                category != null ? category : "",
+                type != null ? type : Listing.ListingType.SALE,
+                priceMax != null ? priceMax : Double.MAX_VALUE
+        ));
+    }
+
+    // auth required
+    @GetMapping("/mine")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<List<Listing>> getMyListings(Principal principal) {
+        return ResponseEntity.ok(listingService.getListingsByUser(principal));
+    }
+
 
 }

@@ -15,4 +15,11 @@ public interface ListingService {
     Listing getListingById(String id);
 
     void deleteListing(String id, Principal principal) throws AccessDeniedException;
+
+    List<Listing> getListingsByType(Listing.ListingType type);
+
+    List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax);
+
+    List<Listing> getListingsByUser(Principal principal);
+
 }

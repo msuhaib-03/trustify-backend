@@ -6,6 +6,7 @@ import com.trustify.model.User;
 import com.trustify.repository.ListingRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.service.ListingService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -67,4 +68,31 @@ public class ListingServiceImpl implements ListingService {
 
         listingRepository.delete(listing);
     }
+
+    public List<String> buildFullImageUrls(List<String> imagePaths, HttpServletRequest request) {
+        String baseUrl = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort();
+        return imagePaths.stream()
+                .map(path -> baseUrl + path)
+                .toList();
+    }
+
+    @Override
+    public List<Listing> getListingsByType(Listing.ListingType type) {
+        return listingRepository.findByType(type);
+    }
+
+    @Override
+    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax) {
+        return listingRepository.searchListings(category, type, priceMax);
+    }
+
+    @Override
+    public List<Listing> getListingsByUser(Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return listingRepository.findByOwnerId(user.getId());
+    }
+
+
+
 }
