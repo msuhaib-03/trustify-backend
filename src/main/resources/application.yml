@@ -16,6 +16,12 @@ spring:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
 
+    servlet:
+      multipart:
+        enabled: true
+        max-file-size: 10MB
+        max-request-size: 10MB
+
   mail:
     host: smtp.gmail.com
     port: 465
@@ -31,6 +37,9 @@ spring:
             port: 465
             class: javax.net.ssl.SSLSocketFactory
             fallback: false
+
+file:
+  upload-dir: uploads/listings
 
 server:
   port: 8080
