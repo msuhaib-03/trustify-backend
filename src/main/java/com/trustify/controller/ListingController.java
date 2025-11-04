@@ -1,6 +1,7 @@
 package com.trustify.controller;
 
 import com.trustify.dto.ListingDTO;
+import com.trustify.model.Listing;
 import com.trustify.service.ImageUploadService;
 import com.trustify.service.ListingService;
 import jakarta.validation.Valid;
@@ -11,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.security.Principal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -21,10 +24,39 @@ public class ListingController {
     private final ImageUploadService imageUploadService;
 
 
-    @PostMapping
+    @PostMapping("/create")
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<?> createListing(@Valid @RequestBody ListingDTO dto, Principal principal) {
-        return ResponseEntity.ok(listingService.createListing(dto, principal));
+    public ResponseEntity<?> createListing(
+            @RequestParam("title") String title,
+            @RequestParam("description") String description,
+            @RequestParam("price") Double price,
+            @RequestParam("type") String type,
+            @RequestParam("category") String category,
+            @RequestParam(value = "images", required = false) List<MultipartFile> images,
+            Principal principal
+    ){
+        try {
+            List<String> imageUrls = new ArrayList<>();
+            if (images != null && !images.isEmpty()) {
+                for (MultipartFile file : images) {
+                    String url = imageUploadService.saveImage(file);
+                    imageUrls.add(url);
+                }
+            }
+
+            ListingDTO dto = new ListingDTO();
+            dto.setTitle(title);
+            dto.setDescription(description);
+            dto.setPrice(price);
+            dto.setType(Listing.ListingType.valueOf(type.toUpperCase()));
+            dto.setCategory(category);
+            dto.setImageUrls(imageUrls);
+
+            return ResponseEntity.ok(listingService.createListing(dto, principal));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping
