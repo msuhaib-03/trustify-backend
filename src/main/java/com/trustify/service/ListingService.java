@@ -32,8 +32,11 @@ public interface ListingService {
 
     List<Listing> getListingsByOwner(Principal principal, int page, int size, String sortBy, String sortDir);
 
-    void toggleFavorite(String listingId, Principal principal);
-    List<Listing> getUserFavorites(Principal principal);
+//    void toggleFavorite(String listingId, Principal principal);
+//    List<Listing> getUserFavorites(Principal principal);
+
+    boolean toggleFavorite(String listingId, Principal principal);
+    List<ListingDTO> getFavoriteListings(Principal principal);
 
 
 }

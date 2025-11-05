@@ -174,33 +174,72 @@ public class ListingServiceImpl implements ListingService {
         return pageResult.getContent();
     }
 
+//    @Override
+//    public void toggleFavorite(String listingId, Principal principal) {
+//        User user = userRepository.findByEmail(principal.getName())
+//                .orElseThrow(() -> new RuntimeException("User not found"));
+//
+//        Set<String> favorites = user.getFavoriteListingIds();
+//
+//        if (favorites.contains(listingId)) {
+//            favorites.remove(listingId);
+//        } else {
+//            favorites.add(listingId);
+//        }
+//
+//        userRepository.save(user);
+//    }
+//
+//    @Override
+//    public List<Listing> getUserFavorites(Principal principal) {
+//        User user = userRepository.findByEmail(principal.getName())
+//                .orElseThrow(() -> new RuntimeException("User not found"));
+//
+//        if (user.getFavoriteListingIds().isEmpty()) {
+//            return List.of();
+//        }
+//
+//        return listingRepository.findByIdIn(new ArrayList<>(user.getFavoriteListingIds()));
+//    }
+//
+@Override
+public boolean toggleFavorite(String listingId, Principal principal) {
+    User user = userRepository.findByEmail(principal.getName())
+            .orElseThrow(() -> new RuntimeException("User not found"));
+
+    Listing listing = listingRepository.findById(listingId)
+            .orElseThrow(() -> new RuntimeException("Listing not found"));
+
+    Set<String> favorites = user.getFavoriteListingIds();
+
+    boolean added;
+    if (favorites.contains(listingId)) {
+        favorites.remove(listingId);
+        added = false;
+    } else {
+        favorites.add(listingId);
+        added = true;
+    }
+
+    user.setFavoriteListingIds(favorites);
+    userRepository.save(user);
+
+    return added;
+}
+
     @Override
-    public void toggleFavorite(String listingId, Principal principal) {
+    public List<ListingDTO> getFavoriteListings(Principal principal) {
         User user = userRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        Set<String> favorites = user.getFavoriteListingIds();
+        Set<String> favoriteIds = user.getFavoriteListingIds();
+        List<Listing> listings = listingRepository.findAllById(favoriteIds);
 
-        if (favorites.contains(listingId)) {
-            favorites.remove(listingId);
-        } else {
-            favorites.add(listingId);
-        }
-
-        userRepository.save(user);
+        return listings.stream()
+                .map(listing -> mapToDTO(listing, favoriteIds))
+                .toList();
     }
 
-    @Override
-    public List<Listing> getUserFavorites(Principal principal) {
-        User user = userRepository.findByEmail(principal.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (user.getFavoriteListingIds().isEmpty()) {
-            return List.of();
-        }
-
-        return listingRepository.findByIdIn(new ArrayList<>(user.getFavoriteListingIds()));
-    }
 
     private ListingDTO mapToDTO(Listing listing, Set<String> userFavorites) {
         ListingDTO dto = new ListingDTO();

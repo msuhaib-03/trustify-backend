@@ -193,14 +193,23 @@ public class ListingController {
             @PathVariable String listingId,
             Principal principal
     ) {
-        listingService.toggleFavorite(listingId, principal);
-        return ResponseEntity.ok(Map.of("message", "Favorite toggled successfully!"));
+        try {
+            boolean isFavorite = listingService.toggleFavorite(listingId, principal);
+            return ResponseEntity.ok(Map.of("message", isFavorite ? "Added to favorites" : "Removed from favorites"));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
+    // this requires auth
     @GetMapping("/favorites")
     @PreAuthorize("hasRole('USER')")
     public ResponseEntity<?> getUserFavorites(Principal principal) {
-        return ResponseEntity.ok(listingService.getUserFavorites(principal));
+        try {
+            return ResponseEntity.ok(listingService.getFavoriteListings(principal));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
     }
 
 
