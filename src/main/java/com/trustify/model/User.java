@@ -7,6 +7,8 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 @Document(collection = "users")
 @Data
@@ -39,6 +41,8 @@ public class User {
 
     @LastModifiedBy
     private Instant updatedAt;
+
+    private Set<String> favoriteListingIds = new HashSet<>();
 
     public enum Role {
         USER,

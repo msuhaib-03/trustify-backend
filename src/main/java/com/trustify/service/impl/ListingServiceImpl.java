@@ -8,6 +8,10 @@ import com.trustify.repository.UserRepository;
 import com.trustify.service.ListingService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.AccessDeniedException;
@@ -93,6 +97,59 @@ public class ListingServiceImpl implements ListingService {
         return listingRepository.findByOwnerId(user.getId());
     }
 
+
+//    @Override
+//    public Page<Listing> getAllActiveListings(Pageable pageable) {
+//        return listingRepository.findByStatus(Listing.ListingStatus.ACTIVE, pageable);
+//    }
+
+    @Override
+    public List<Listing> getAllActiveListings(int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase("asc") ?
+                Sort.by(sortBy).ascending() :
+                Sort.by(sortBy).descending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<Listing> listingsPage = listingRepository.findByStatus(Listing.ListingStatus.ACTIVE, pageable);
+
+        return listingsPage.getContent();
+    }
+
+
+    @Override
+    public List<Listing> getListingsByType(Listing.ListingType type, int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase("asc") ?
+                Sort.by(sortBy).ascending() :
+                Sort.by(sortBy).descending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<Listing> listingsPage = listingRepository.findByStatusAndType(Listing.ListingStatus.ACTIVE, type, pageable);
+
+        return listingsPage.getContent();
+    }
+
+
+    @Override
+    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase("asc") ?
+                Sort.by(sortBy).ascending() :
+                Sort.by(sortBy).descending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return (List<Listing>) listingRepository.searchListings(category, type, priceMax, pageable);
+    }
+
+    @Override
+    public List<Listing> getListingsByOwner(Principal principal, int page, int size, String sortBy, String sortDir) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        Page<Listing> pageResult = listingRepository.findByOwnerId(user.getId(), pageable);
+        return pageResult.getContent();
+    }
 
 
 }

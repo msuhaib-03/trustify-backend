@@ -8,6 +8,9 @@ import com.trustify.service.impl.ListingServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -64,9 +67,19 @@ public class ListingController {
     }
 
     // no auth required
+    // http://localhost:8080/listings?page=0&size=5&sortBy=price&sortDir=asc
+    // this is how it is going to be working in postman
+    // this is how it worked earlier
+    // http://localhost:8080/api/listings
     @GetMapping
-    public ResponseEntity<?> getAllListings() {
-        return ResponseEntity.ok(listingService.getAllActiveListings());
+    public ResponseEntity<?> getAllListings(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir
+    ) {
+        return ResponseEntity.ok(listingService.getAllActiveListings(page, size, sortBy, sortDir));
+      //  return ResponseEntity.ok(listingService.getAllActiveListings());
     }
 
     // no auth required
@@ -114,14 +127,27 @@ public class ListingController {
 
     // no auth required
     @GetMapping("/rent")
-    public ResponseEntity<List<Listing>> getAllRentListings() {
-        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.RENT));
+    public ResponseEntity<List<Listing>> getAllRentListings(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir
+    ) {
+        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.RENT, page, size, sortBy, sortDir));
+
+        //return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.RENT));
     }
 
     // no auth required
     @GetMapping("/sell")
-    public ResponseEntity<List<Listing>> getAllSellListings() {
-        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.SALE));
+    public ResponseEntity<List<Listing>> getAllSellListings(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir
+    ) {
+        return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.SALE, page, size, sortBy, sortDir));
+        // return ResponseEntity.ok(listingService.getListingsByType(Listing.ListingType.SALE));
     }
 
     // no auth required
@@ -129,20 +155,32 @@ public class ListingController {
     public ResponseEntity<List<Listing>> searchListings(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Listing.ListingType type,
-            @RequestParam(required = false) Double priceMax
+            @RequestParam(required = false) Double priceMax,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir
     ) {
         return ResponseEntity.ok(listingService.searchListings(
                 category != null ? category : "",
                 type != null ? type : Listing.ListingType.SALE,
-                priceMax != null ? priceMax : Double.MAX_VALUE
+                priceMax != null ? priceMax : Double.MAX_VALUE,
+                page, size, sortBy, sortDir
         ));
     }
 
     // auth required
     @GetMapping("/mine")
     @PreAuthorize("hasRole('USER')")
-    public ResponseEntity<List<Listing>> getMyListings(Principal principal) {
-        return ResponseEntity.ok(listingService.getListingsByUser(principal));
+    public ResponseEntity<List<Listing>> getMyListings(
+            Principal principal,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir
+            ) {
+        return ResponseEntity.ok(listingService.getListingsByOwner(principal, page, size, sortBy, sortDir));
+        //return ResponseEntity.ok(listingService.getListingsByUser(principal));
     }
 
 
