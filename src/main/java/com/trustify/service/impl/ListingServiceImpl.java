@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import java.nio.file.AccessDeniedException;
 import java.security.Principal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -86,8 +88,13 @@ public class ListingServiceImpl implements ListingService {
     }
 
     @Override
-    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax) {
-        return listingRepository.searchListings(category, type, priceMax);
+    public Page<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir) {
+        Sort sort = sortDir.equalsIgnoreCase("asc") ?
+                Sort.by(sortBy).ascending() :
+                Sort.by(sortBy).descending();
+
+        Pageable pageable = PageRequest.of(page, size, sort);
+        return listingRepository.searchListings(category, type, priceMax, pageable);
     }
 
     @Override
@@ -104,7 +111,7 @@ public class ListingServiceImpl implements ListingService {
 //    }
 
     @Override
-    public List<Listing> getAllActiveListings(int page, int size, String sortBy, String sortDir) {
+    public List<ListingDTO> getAllActiveListings(int page, int size, String sortBy, String sortDir, Principal principal) {
         Sort sort = sortDir.equalsIgnoreCase("asc") ?
                 Sort.by(sortBy).ascending() :
                 Sort.by(sortBy).descending();
@@ -112,7 +119,23 @@ public class ListingServiceImpl implements ListingService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Listing> listingsPage = listingRepository.findByStatus(Listing.ListingStatus.ACTIVE, pageable);
 
-        return listingsPage.getContent();
+//        User user = userRepository.findByEmail(principal.getName())
+//                .orElseThrow(() -> new RuntimeException("User not found"));
+//        Set<String> userFavorites = user.getFavoriteListingIds();
+        Set<String> userFavorites; // empty by default
+
+        if (principal != null) {
+            userFavorites = userRepository.findByEmail(principal.getName())
+                    .map(User::getFavoriteListingIds)
+                    .orElse(Set.of());
+        } else {
+            userFavorites = Set.of();
+        }
+        // ✅ Convert listings to DTOs and set `isFavorite`
+        return listingsPage.getContent().stream()
+                .map(listing -> mapToDTO(listing, userFavorites))
+                .toList();
+
     }
 
 
@@ -129,15 +152,15 @@ public class ListingServiceImpl implements ListingService {
     }
 
 
-    @Override
-    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir) {
-        Sort sort = sortDir.equalsIgnoreCase("asc") ?
-                Sort.by(sortBy).ascending() :
-                Sort.by(sortBy).descending();
-
-        Pageable pageable = PageRequest.of(page, size, sort);
-        return (List<Listing>) listingRepository.searchListings(category, type, priceMax, pageable);
-    }
+//    @Override
+//    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir) {
+//        Sort sort = sortDir.equalsIgnoreCase("asc") ?
+//                Sort.by(sortBy).ascending() :
+//                Sort.by(sortBy).descending();
+//
+//        Pageable pageable = PageRequest.of(page, size, sort);
+//        return (List<Listing>) listingRepository.searchListings(category, type, priceMax, pageable);
+//    }
 
     @Override
     public List<Listing> getListingsByOwner(Principal principal, int page, int size, String sortBy, String sortDir) {
@@ -149,6 +172,46 @@ public class ListingServiceImpl implements ListingService {
 
         Page<Listing> pageResult = listingRepository.findByOwnerId(user.getId(), pageable);
         return pageResult.getContent();
+    }
+
+    @Override
+    public void toggleFavorite(String listingId, Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        Set<String> favorites = user.getFavoriteListingIds();
+
+        if (favorites.contains(listingId)) {
+            favorites.remove(listingId);
+        } else {
+            favorites.add(listingId);
+        }
+
+        userRepository.save(user);
+    }
+
+    @Override
+    public List<Listing> getUserFavorites(Principal principal) {
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getFavoriteListingIds().isEmpty()) {
+            return List.of();
+        }
+
+        return listingRepository.findByIdIn(new ArrayList<>(user.getFavoriteListingIds()));
+    }
+
+    private ListingDTO mapToDTO(Listing listing, Set<String> userFavorites) {
+        ListingDTO dto = new ListingDTO();
+        dto.setTitle(listing.getTitle());
+        dto.setDescription(listing.getDescription());
+        dto.setPrice(listing.getPrice());
+        dto.setType(listing.getType());
+        dto.setCategory(listing.getCategory());
+        dto.setImageUrls(listing.getImageUrls());
+        dto.setFavorite(userFavorites.contains(listing.getId()));
+        return dto;
     }
 
 

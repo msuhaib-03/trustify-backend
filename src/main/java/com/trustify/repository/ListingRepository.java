@@ -16,8 +16,8 @@ public interface ListingRepository extends MongoRepository<Listing, String> {
     Page<Listing> findByStatusAndType(Listing.ListingStatus status, Listing.ListingType type, Pageable pageable);
 
 
-    @Query("{ 'category': { $regex: ?0, $options: 'i' }, 'type': ?1, 'price': { $lte: ?2 } }")
-    List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax);
+//    @Query("{ 'category': { $regex: ?0, $options: 'i' }, 'type': ?1, 'price': { $lte: ?2 } }")
+//    Page<Listing> searchListings(String category, Listing.ListingType type, Double priceMax);
 
     List<Listing> findByOwnerId(String ownerId);
     Page<Listing> findByOwnerId(String ownerId, Pageable pageable);
@@ -25,6 +25,8 @@ public interface ListingRepository extends MongoRepository<Listing, String> {
 
     @Query("{ 'category': { $regex: ?0, $options: 'i' }, 'type': ?1, 'price': { $lte: ?2 }, 'status': 'ACTIVE' }")
     Page<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, Pageable pageable);
+
+    List<Listing> findByIdIn(List<String> ids);
 
 
 }

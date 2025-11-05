@@ -8,6 +8,7 @@ import com.trustify.service.impl.ListingServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -25,6 +26,7 @@ import java.util.Map;
 @RequestMapping("/listings")
 @RequiredArgsConstructor
 public class ListingController {
+
     private final ListingService listingService;
     private final ImageUploadService imageUploadService;
     private final ListingServiceImpl listingServiceImpl;
@@ -75,10 +77,11 @@ public class ListingController {
     public ResponseEntity<?> getAllListings(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "createdAt,desc") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir,
+            Principal principal
     ) {
-        return ResponseEntity.ok(listingService.getAllActiveListings(page, size, sortBy, sortDir));
+        return ResponseEntity.ok(listingService.getAllActiveListings(page, size, sortBy, sortDir, principal));
       //  return ResponseEntity.ok(listingService.getAllActiveListings());
     }
 
@@ -152,7 +155,7 @@ public class ListingController {
 
     // no auth required
     @GetMapping("/search")
-    public ResponseEntity<List<Listing>> searchListings(
+    public ResponseEntity<Page<Listing>> searchListings(
             @RequestParam(required = false) String category,
             @RequestParam(required = false) Listing.ListingType type,
             @RequestParam(required = false) Double priceMax,
@@ -181,6 +184,23 @@ public class ListingController {
             ) {
         return ResponseEntity.ok(listingService.getListingsByOwner(principal, page, size, sortBy, sortDir));
         //return ResponseEntity.ok(listingService.getListingsByUser(principal));
+    }
+
+    // this requires auth
+    @PostMapping("/{listingId}/favorite")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> toggleFavorite(
+            @PathVariable String listingId,
+            Principal principal
+    ) {
+        listingService.toggleFavorite(listingId, principal);
+        return ResponseEntity.ok(Map.of("message", "Favorite toggled successfully!"));
+    }
+
+    @GetMapping("/favorites")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> getUserFavorites(Principal principal) {
+        return ResponseEntity.ok(listingService.getUserFavorites(principal));
     }
 
 

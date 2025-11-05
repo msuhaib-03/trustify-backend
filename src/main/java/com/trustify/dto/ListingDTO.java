@@ -25,4 +25,6 @@ public class ListingDTO {
     private String category;
 
     private List<String> imageUrls;
+
+    private boolean isFavorite;
 }

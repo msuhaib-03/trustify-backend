@@ -20,17 +20,20 @@ public interface ListingService {
 
     List<Listing> getListingsByType(Listing.ListingType type);
 
-    List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax);
+    //List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax);
 
     List<Listing> getListingsByUser(Principal principal);
 
-    List<Listing> getAllActiveListings(int page, int size, String sortBy, String sortDir);
+    List<ListingDTO> getAllActiveListings(int page, int size, String sortBy, String sortDir, Principal principal);
 
     List<Listing> getListingsByType(Listing.ListingType type, int page, int size, String sortBy, String sortDir);
 
-    List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir);
+    Page<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir);
 
     List<Listing> getListingsByOwner(Principal principal, int page, int size, String sortBy, String sortDir);
+
+    void toggleFavorite(String listingId, Principal principal);
+    List<Listing> getUserFavorites(Principal principal);
 
 
 }
