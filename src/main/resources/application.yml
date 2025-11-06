@@ -7,6 +7,8 @@ spring:
       uri: mongodb+srv://muhammadsuhaib2805:8c4Y3ES1UilAXrT1@trustify.nwckntf.mongodb.net/trustify?retryWrites=true&w=majority&appName=Trustify
       database: trustify
       auto-index-creation: true
+      socket-timeout: 30000
+      connection-timeout: 30000
 
   security:
     oauth2:

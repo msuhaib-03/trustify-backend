@@ -38,6 +38,8 @@ public class SecurityConfig {
                                 "/users/**",
                                 "/auth/google/**",
                                 "/listings/**",
+                                "/chat/**",
+                                "/socket.io/**",
                                 "/oauth/**")
                         .permitAll()
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
