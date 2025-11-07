@@ -83,3 +83,16 @@ public class ChatController {
 
 
 }
+
+
+
+// all the controllers need authentication and authorization mechanism to ensure that only authorized users can access their chats and messages. This can be implemented using JWT tokens, OAuth2, or any other suitable method based on the application's requirements.
+// therefore bearer token containing userId is expected in the Authorization header of each request.
+// copy & paste bearer token utility from auth service ... api/auth/login
+
+// how to hit the web socket endpoints from postman:
+// 40{"token":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJyYWJpeWE3QGdtYWlsLmNvbSIsImlhdCI6MTc2MjUyODI2NywiZXhwIjoxNzYyNTMxODY3fQ.F7Jwhg1DPF6hIx9bbBUigkw_uUCSwawvd6bAViauR3g"}
+    //    42["joinRoom","690dcedfee650736609046cd"]
+
+     //   42["sendMessage", {"chatId":"690dcedfee650736609046cd","message":"Hello from Postman"}]
+// ws://localhost:3001/socket.io/?EIO=4&transport=websocket ---> in the ws URL ( websocket )
