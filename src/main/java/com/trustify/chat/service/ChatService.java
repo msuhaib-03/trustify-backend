@@ -1,45 +1,26 @@
 package com.trustify.chat.service;
 
+import com.trustify.chat.dto.ChatSummaryDTO;
 import com.trustify.chat.model.Chat;
 import com.trustify.chat.model.Message;
 import com.trustify.chat.repository.ChatRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
-@Service
-@RequiredArgsConstructor
-public class ChatService {
-    private final ChatRepository chatRepository;
 
-    public Chat createOrGetChat(String user1, String user2) {
+public interface ChatService {
 
-        Optional<Chat> existing = chatRepository.findByUser1IdAndUser2Id(user1, user2);
-        if (existing.isPresent()) return existing.get();
-
-        Chat chat = new Chat();
-        chat.setUser1Id(user1);
-        chat.setUser2Id(user2);
-
-        return chatRepository.save(chat);
-    }
-
-    public Chat saveMessage(String chatId, String senderId, String messageText) {
-        Chat chat = chatRepository.findById(chatId)
-                .orElseThrow(() -> new RuntimeException("Chat not found"));
-
-        Message msg = new Message();
-        msg.setSenderId(senderId);
-        msg.setContent(messageText);     // match the field name above
-        msg.setTimestamp(Instant.now());
-
-        chat.getMessages().add(msg);
-        return chatRepository.save(chat);
-    }
-
-    public Chat getChat(String chatId) {
-        return chatRepository.findById(chatId).orElseThrow();
-    }
+    Chat createChatIfNotExists(String chatId, List<String> participants);
+    Chat saveMessage(String chatId, Message message);
+    Page<Chat> getChatsForUser(String userId, Pageable pageable);
+    Optional<Chat> getChatById(String chatId);
+    List<Chat> getChatsForUser(String userId);
+    Chat markMessagesRead(String chatId, String userId);
+    List<ChatSummaryDTO> getChatSummaries(String userId, Pageable pageable);
 }

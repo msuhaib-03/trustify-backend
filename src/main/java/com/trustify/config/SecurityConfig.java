@@ -38,7 +38,7 @@ public class SecurityConfig {
                                 "/users/**",
                                 "/auth/google/**",
                                 "/listings/**",
-                                "/chat/**",
+                                "/chats/**",
                                 "/socket.io/**",
                                 "/oauth/**")
                         .permitAll()
