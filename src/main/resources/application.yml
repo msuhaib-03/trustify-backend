@@ -40,6 +40,12 @@ spring:
             class: javax.net.ssl.SSLSocketFactory
             fallback: false
 
+stripe:
+  secret:
+    key: ${STRIPE_SECRET_KEY}
+  publishable:
+    key: ${STRIPE_PUBLISHABLE_KEY}
+
 file:
   upload-dir: uploads/listings
 
