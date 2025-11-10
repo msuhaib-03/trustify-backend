@@ -39,12 +39,14 @@ public class SecurityConfig {
                                 "/auth/google/**",
                                 "/listings/**",
                                 "/chats/**",
+                                "/stripe/**",
                                 "/payments/**",
                                 "/socket.io/**",
                                 "/oauth/**")
                         .permitAll()
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
                         .requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/payment/**").authenticated()
                         //.requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )

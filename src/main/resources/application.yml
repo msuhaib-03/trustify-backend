@@ -45,6 +45,8 @@ stripe:
     key: ${STRIPE_SECRET_KEY}
   publishable:
     key: ${STRIPE_PUBLISHABLE_KEY}
+  webhook:
+    secret: ${STRIPE_WEBHOOK_SECRET}
 
 file:
   upload-dir: uploads/listings
