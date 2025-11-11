@@ -1,13 +1,23 @@
 package com.trustify.service;
 
+import com.stripe.model.PaymentIntent;
+import com.trustify.dto.CreateTransactionRequest;
 import com.trustify.model.Transaction;
 import org.springframework.stereotype.Service;
 
 
 public interface TransactionService {
-    Transaction createTransactionAndPaymentIntent(Transaction tx) throws Exception;
-    Transaction handlePaymentIntentSucceeded(String paymentIntentId, String chargeId) throws Exception;
-    Transaction releaseEscrow(String transactionId) throws Exception;
-    Transaction refundTransaction(String transactionId, Long amount) throws Exception;
-    Transaction getById(String id);
+    // create transaction and create PaymentIntent with capture_method=manual
+    Transaction createAndAuthorize(CreateTransactionRequest req);
+
+    // capture / release escrow
+    PaymentIntent capture(String transactionId);
+
+    // refund or cancel
+    void refund(String transactionId, Long amountCents); // amountCents null => full
+
+    // handle webhook events
+    void handlePaymentIntentSucceeded(String paymentIntentId);
+
+    void handlePaymentIntentCancelled(String paymentIntentId);
 }

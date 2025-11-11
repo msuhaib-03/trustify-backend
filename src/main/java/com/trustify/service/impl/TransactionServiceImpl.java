@@ -1,129 +1,191 @@
 package com.trustify.service.impl;
 
+import com.stripe.Stripe;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.model.Transfer;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
 import com.stripe.param.TransferCreateParams;
+import com.trustify.dto.CreateTransactionRequest;
+import com.trustify.model.PaymentEvent;
 import com.trustify.model.Transaction;
+import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class TransactionServiceImpl implements TransactionService {
-    private final TransactionRepository txRepo;
+
+    private final TransactionRepository transactionRepository;
+    private final PaymentEventRepository eventRepository;
+
+    @Value("${STRIPE_SECRET_KEY}")
+    private String stripeSecret;
 
     @Override
-    public Transaction createTransactionAndPaymentIntent(Transaction t) throws Exception {
-
-        // Example inside TransactionServiceImpl.createTransactionAndPaymentIntent(...)
-        boolean suspicious = false;
-        if (t.getAmount() > 200_000L) { // e.g., > 2000.00 in cents
-            suspicious = true;
+    public Transaction createAndAuthorize(CreateTransactionRequest req) {
+        Stripe.apiKey = stripeSecret;
+        if (isBlacklisted(req.getBuyerId()) || !isSellerVerified(req.getSellerId())) {
+            Transaction tx = Transaction.builder()...
+      .status(Transaction.TransactionStatus.MANUAL_REVIEW)
+                    .build();
+            transactionRepository.save(tx);
+            eventRepository.save(new PaymentEvent(...));
+            throw new RuntimeException("Transaction placed on manual review");
         }
 
-        // velocity check (example pseudo)
-        long recentCount = txRepo.countByBuyerEmailAndCreatedAtAfter(t.getBuyerEmail(), Instant.now().minus(10, ChronoUnit.MINUTES));
-        if (recentCount > 5) suspicious = true;
 
-        if (suspicious) {
-            t.setStatus(Transaction.Status.HELD);
-            txRepo.save(t);
-            // optionally return with a flag telling frontend the transaction is under review
-            return t;
-        }
-        // Save a PENDING transaction first
-        t.setStatus(Transaction.Status.PENDING);
-        t.setCreatedAt(Instant.now());
-        txRepo.save(t);
+        try {
+            PaymentIntentCreateParams.Builder params = PaymentIntentCreateParams.builder()
+                    .setAmount(req.getAmountCents())
+                    .setCurrency(req.getCurrency() == null ? "usd" : req.getCurrency())
+                    .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
+                    .putMetadata("listingId", req.getListingId())
+                    .putMetadata("buyerId", req.getBuyerId())
+                    .putMetadata("sellerId", req.getSellerId());
 
-        // create Stripe PaymentIntent
-        PaymentIntentCreateParams.Builder builder = PaymentIntentCreateParams.builder()
-                .setAmount(t.getAmount())
-                .setCurrency(t.getCurrency())
-                .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.AUTOMATIC) // we will hold in Stripe; "manual" optional
-                .addPaymentMethodType("card");
+            PaymentIntent pi = PaymentIntent.create(params.build());
 
-        // if you want to require statement descriptor or metadata:
-        builder.putMetadata("transactionId", t.getId());
-        builder.putMetadata("productId", t.getProductId());
-        PaymentIntentCreateParams params = builder.build();
-
-        PaymentIntent intent = PaymentIntent.create(params);
-
-        t.setStripePaymentIntentId(intent.getId());
-        t.setStatus(Transaction.Status.PENDING);
-        t.setUpdatedAt(Instant.now());
-        txRepo.save(t);
-        return t;
-
-    }
-
-    @Override
-    public Transaction handlePaymentIntentSucceeded(String paymentIntentId, String chargeId) throws Exception {
-        var maybe = txRepo.findByStripePaymentIntentId(paymentIntentId);
-        if (maybe.isEmpty()) throw new RuntimeException("Transaction not found for PI: " + paymentIntentId);
-        Transaction t = maybe.get();
-        t.setStripeChargeId(chargeId);
-        // funds are with Stripe: mark PAID or HELD depending on your flow
-        t.setStatus(Transaction.Status.PAID); // or HELD if you want admin release
-        t.setUpdatedAt(Instant.now());
-        return txRepo.save(t);
-    }
-
-    @Override
-    public Transaction releaseEscrow(String transactionId) throws Exception {
-        Transaction t = txRepo.findById(transactionId).orElseThrow();
-        if (t.getStatus() != Transaction.Status.PAID && t.getStatus() != Transaction.Status.HELD) {
-            throw new RuntimeException("Transaction not ready for release");
-        }
-
-        // If you use Stripe Connect: transfer to connected account (sellerStripeAccountId)
-        if (t.getSellerStripeAccountId() != null && !t.getSellerStripeAccountId().isBlank()) {
-            TransferCreateParams transferParams = TransferCreateParams.builder()
-                    .setAmount(t.getAmount())
-                    .setCurrency(t.getCurrency())
-                    .setDestination(t.getSellerStripeAccountId())
-                    .putMetadata("transactionId", t.getId())
+            Transaction tx = Transaction.builder()
+                    .listingId(req.getListingId())
+                    .buyerId(req.getBuyerId())
+                    .sellerId(req.getSellerId())
+                    .type(req.getType())
+                    .amountCents(req.getAmountCents())
+                    .depositCents(req.getDepositCents())
+                    .currency(pi.getCurrency())
+                    .status(Transaction.TransactionStatus.AUTHORIZED)
+                    .stripePaymentIntentId(pi.getId())
+                    .createdAt(Instant.now())
+                    .updatedAt(Instant.now())
                     .build();
 
-            Transfer transfer = Transfer.create(transferParams);
-            t.setStatus(Transaction.Status.RELEASED);
-            t.setUpdatedAt(Instant.now());
-            return txRepo.save(t);
-        } else {
-            // If not using Connect, you may need server-side payout or manual payout
-            // For now mark RELEASED and let finance handle payout.
-            t.setStatus(Transaction.Status.RELEASED);
-            t.setUpdatedAt(Instant.now());
-            return txRepo.save(t);
+            transactionRepository.save(tx);
+
+            PaymentEvent ev = new PaymentEvent();
+            ev.setTransactionId(tx.getId());
+            ev.setType("PAYMENT_INTENT_CREATED");
+            ev.setStripeObjectId(pi.getId());
+            ev.setActor("SYSTEM");
+            ev.setCreatedAt(Instant.now());
+            eventRepository.save(ev);
+
+            return tx;
+        } catch (Exception e) {
+            throw new RuntimeException("Stripe create PI failed: " + e.getMessage(), e);
         }
     }
 
     @Override
-    public Transaction refundTransaction(String transactionId, Long amount) throws Exception {
-        Transaction t = txRepo.findById(transactionId).orElseThrow();
-        if (t.getStripeChargeId() == null) throw new RuntimeException("No charge id to refund");
+    public PaymentIntent capture(String transactionId) {
+        Stripe.apiKey = stripeSecret;
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
 
-        RefundCreateParams.Builder builder = RefundCreateParams.builder()
-                .setCharge(t.getStripeChargeId());
-        if (amount != null) builder.setAmount(amount);
-        Refund refund = Refund.create(builder.build());
+        if (tx.getStripePaymentIntentId() == null) throw new RuntimeException("No payment intent present");
 
-        t.setStatus(Transaction.Status.REFUNDED);
-        t.setUpdatedAt(Instant.now());
-        return txRepo.save(t);
+        try {
+            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
+            PaymentIntent captured = pi.capture(); // immediate capture; you can pass capture params if needed
+
+            tx.setStripeChargeId(captured.getCharges().getData().isEmpty() ? null : captured.getCharges().getData().get(0).getId());
+            tx.setStatus(Transaction.TransactionStatus.RELEASED);
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            PaymentEvent ev = new PaymentEvent();
+            ev.setTransactionId(tx.getId());
+            ev.setType("CAPTURED");
+            ev.setStripeObjectId(captured.getId());
+            ev.setActor("ADMIN");
+            ev.setCreatedAt(Instant.now());
+            eventRepository.save(ev);
+
+            return captured;
+        } catch (Exception e) {
+            throw new RuntimeException("Stripe capture failed: " + e.getMessage(), e);
+        }
     }
 
     @Override
-    public Transaction getById(String id) {
-        return txRepo.findById(id).orElse(null);
+    public void refund(String transactionId, Long amountCents) {
+        Stripe.apiKey = stripeSecret;
+        Transaction tx = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        if (tx.getStripeChargeId() == null) throw new RuntimeException("No charge to refund");
+
+        try {
+            RefundCreateParams.Builder rb = RefundCreateParams.builder()
+                    .setCharge(tx.getStripeChargeId());
+
+            if (amountCents != null) rb.setAmount(amountCents);
+
+            Refund refund = Refund.create(rb.build());
+
+            tx.setStatus(Transaction.TransactionStatus.REFUNDED);
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            PaymentEvent ev = new PaymentEvent();
+            ev.setTransactionId(tx.getId());
+            ev.setType("REFUND");
+            ev.setStripeObjectId(refund.getId());
+            ev.setActor("ADMIN");
+            ev.setCreatedAt(Instant.now());
+            eventRepository.save(ev);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Stripe refund failed: " + e.getMessage(), e);
+        }
     }
+    @Override
+    public void handlePaymentIntentSucceeded(String paymentIntentId) {
+        Optional<Transaction> opt = transactionRepository.findByStripePaymentIntentId(paymentIntentId);
+        if (opt.isPresent()) {
+            Transaction tx = opt.get();
+            tx.setStatus(Transaction.TransactionStatus.AUTHORIZED); // authorized/captureable
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            PaymentEvent ev = new PaymentEvent();
+            ev.setTransactionId(tx.getId());
+            ev.setType("PI_SUCCEEDED");
+            ev.setStripeObjectId(paymentIntentId);
+            ev.setActor("SYSTEM");
+            ev.setCreatedAt(Instant.now());
+            eventRepository.save(ev);
+        } else {
+            // optionally log - unmapped PI
+        }
+    }
+
+    @Override
+    public void handlePaymentIntentCancelled(String paymentIntentId) {
+        Optional<Transaction> opt = transactionRepository.findByStripePaymentIntentId(paymentIntentId);
+        opt.ifPresent(tx -> {
+            tx.setStatus(Transaction.TransactionStatus.CANCELLED);
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            PaymentEvent ev = new PaymentEvent();
+            ev.setTransactionId(tx.getId());
+            ev.setType("PI_CANCELLED");
+            ev.setStripeObjectId(paymentIntentId);
+            ev.setActor("SYSTEM");
+            ev.setCreatedAt(Instant.now());
+            eventRepository.save(ev);
+        });
+    }
+
+
 }

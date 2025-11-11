@@ -10,6 +10,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Document(collection = "transactions")
 @Data
@@ -20,25 +21,31 @@ public class Transaction {
     @Id
     private String id;
 
-    private String productId;
-    private String buyerEmail;
-    private String sellerEmail;
-    private String sellerStripeAccountId; // optional (for Stripe Connect)
+    private String listingId;
+    private String buyerId;   // could be email or userId
+    private String sellerId;
 
-    private Long amount; // in cents
-    private String currency; // "usd" or "pkr" etc.
+    private TransactionType type; // SALE or RENT
+
+    private long amountCents;
+    private long depositCents; // for rent
+    private String currency;
+
+    private TransactionStatus status;
+
     private String stripePaymentIntentId;
-    private String stripeChargeId; // available after success
+    private String stripeChargeId;
 
-    private Integer daysToRent; // optional for rent
-    private Mode mode; // SALE or RENT
-
-    private Status status;
+    private Map<String,Object> metadata;
 
     @CreatedDate
     private Instant createdAt;
     private Instant updatedAt;
 
-    public enum Mode { SALE, RENT }
-    public enum Status { PENDING, PAID, HELD, RELEASED, REFUNDED, FAILED }
+
+    public enum TransactionType { SALE, RENT }
+
+    public enum TransactionStatus {
+        PENDING, AUTHORIZED, HELD, RELEASED, REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW
+    }
 }

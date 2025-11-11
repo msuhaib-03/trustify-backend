@@ -1,5 +1,6 @@
 package com.trustify.controller;
 
+import com.stripe.exception.SignatureVerificationException;
 import com.stripe.model.Charge;
 import com.stripe.model.Event;
 import com.stripe.model.PaymentIntent;
@@ -25,41 +26,37 @@ public class StripeWebhookController {
     private String webhookSecret;
 
     @PostMapping("/webhook")
-    public ResponseEntity<String> handleWebhook(HttpServletRequest request, @RequestHeader("Stripe-Signature") String sigHeader) {
+    public ResponseEntity<String> handleWebhook(@RequestHeader("Stripe-Signature") String sigHeader,
+                                                @RequestBody String payload) {
+
+        Event event;
         try {
-            String payload = new BufferedReader(request.getReader()).lines().collect(Collectors.joining("\n"));
-
-            Event event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
-
-            switch (event.getType()) {
-                case "payment_intent.succeeded": {
-                    // event.getDataObjectDeserializer() might return an incomplete object depending on the SDK version.
-                    // So extract the id and retrieve full PaymentIntent from Stripe.
-                    com.stripe.model.PaymentIntent webhookPi = (PaymentIntent) event.getDataObjectDeserializer()
-                            .getObject()
-                            .orElse(null);
-
-                    if (webhookPi != null) {
-                        String piId = webhookPi.getId();
-                        // fetch full PI from Stripe to be safe
-                        PaymentIntent fullPi = PaymentIntent.retrieve(piId);
-
-                        String chargeId = null;
-                        if (fullPi.getCharges() != null && !fullPi.getCharges().getData().isEmpty()) {
-                            Charge ch = (Charge) fullPi.getCharges().getData().get(0);
-                            chargeId = ch.getId();
-                        }
-                        transactionService.handlePaymentIntentSucceeded(piId, chargeId);
-                    }
-                    break;
-                }
-            }    // handle other events you care about
-
-
-            return ResponseEntity.ok("{\"status\":\"received\"}");
+            event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
+        } catch (SignatureVerificationException e) {
+            return ResponseEntity.status(400).body("Invalid signature");
         } catch (Exception e) {
-            e.printStackTrace();
-            return ResponseEntity.status(400).body("{\"error\":\"invalid webhook\"}");
+            return ResponseEntity.status(400).body("Invalid payload");
         }
+
+        String type = event.getType();
+
+        switch (type) {
+            case "payment_intent.succeeded":
+            case "payment_intent.amount_capturable_updated":
+                String piId = ((com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null)).getId();
+                transactionService.handlePaymentIntentSucceeded(piId);
+                break;
+            case "payment_intent.canceled":
+                String piId2 = ((com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null)).getId();
+                transactionService.handlePaymentIntentCancelled(piId2);
+                break;
+            case "charge.refunded":
+                // handle refunds if needed
+                break;
+            default:
+                // log
+        }
+
+        return ResponseEntity.ok("received");
     }
 }

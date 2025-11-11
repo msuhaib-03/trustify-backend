@@ -47,6 +47,7 @@ stripe:
     key: ${STRIPE_PUBLISHABLE_KEY}
   webhook:
     secret: ${STRIPE_WEBHOOK_SECRET}
+  currency: PKR
 
 file:
   upload-dir: uploads/listings

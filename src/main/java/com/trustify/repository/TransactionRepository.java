@@ -8,9 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TransactionRepository extends MongoRepository<Transaction, String> {
-    Optional<Transaction> findByStripePaymentIntentId(String piId);
-    List<Transaction> findByBuyerEmail(String buyerEmail);
-    List<Transaction> findBySellerEmail(String sellerEmail);
-
-    long countByBuyerEmailAndCreatedAtAfter(String buyerEmail, Instant minus);
+    Optional<Transaction> findByStripePaymentIntentId(String paymentIntentId);
+    List<Transaction> findByBuyerId(String buyerId);
+    List<Transaction> findBySellerId(String sellerId);
 }
