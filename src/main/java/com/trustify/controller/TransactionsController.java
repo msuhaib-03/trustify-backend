@@ -3,6 +3,7 @@ package com.trustify.controller;
 import com.stripe.model.PaymentIntent;
 import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
+import com.trustify.dto.CreateTransactionResult;
 import com.trustify.dto.TransactionResponse;
 import com.trustify.model.Transaction;
 import com.trustify.service.TransactionService;
@@ -27,18 +28,19 @@ public class TransactionsController {
     // payment intent creation and authorization
     @PostMapping
     public ResponseEntity<?> createTransaction(@RequestBody CreateTransactionRequest req) {
-        Transaction tx = transactionService.createAndAuthorize(req);
+        CreateTransactionResult result = transactionService.createAndAuthorize(req);
+        Transaction tx = result.getTransaction();
 
-        String clientSecret = null;
-        try {
-            com.stripe.Stripe.apiKey = stripeSecret;
-            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
-            clientSecret = pi.getClientSecret();
-        } catch (Exception ignored) {}
+//        String clientSecret = null;
+//        try {
+//            com.stripe.Stripe.apiKey = stripeSecret;
+//            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
+//            clientSecret = pi.getClientSecret();
+//        } catch (Exception ignored) {}
 
         TransactionResponse resp = new TransactionResponse();
         resp.setTransactionId(tx.getId());
-        resp.setStripeClientSecret(clientSecret);
+        resp.setStripeClientSecret(result.getStripeClientSecret());
         resp.setStripePaymentIntentId(tx.getStripePaymentIntentId());
 
         return ResponseEntity.ok(resp);

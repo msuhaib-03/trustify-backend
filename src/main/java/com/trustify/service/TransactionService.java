@@ -3,6 +3,7 @@ package com.trustify.service;
 import com.stripe.model.PaymentIntent;
 import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
+import com.trustify.dto.CreateTransactionResult;
 import com.trustify.model.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 public interface TransactionService {
     // create transaction and create PaymentIntent with capture_method=manual
-    Transaction createAndAuthorize(CreateTransactionRequest req);
+    CreateTransactionResult createAndAuthorize(CreateTransactionRequest req);
 
     // capture / release escrow
     CaptureResponse capture(String transactionId);

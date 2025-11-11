@@ -4,12 +4,10 @@ import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
-import com.stripe.param.PaymentIntentCaptureParams;
-import com.stripe.param.PaymentIntentCreateParams;
-import com.stripe.param.PaymentIntentRetrieveParams;
-import com.stripe.param.RefundCreateParams;
+import com.stripe.param.*;
 import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
+import com.trustify.dto.CreateTransactionResult;
 import com.trustify.model.PaymentEvent;
 import com.trustify.model.Transaction;
 import com.trustify.repository.PaymentEventRepository;
@@ -37,7 +35,8 @@ public class TransactionServiceImpl implements TransactionService {
 
     // ---------- create & authorize ----------
     @Override
-    public Transaction createAndAuthorize(CreateTransactionRequest req) {
+    public CreateTransactionResult createAndAuthorize(CreateTransactionRequest req) {
+
         Stripe.apiKey = stripeSecret;
 
         // basic anti-fraud checks; replace with your real logic
@@ -99,16 +98,21 @@ public class TransactionServiceImpl implements TransactionService {
 
             transactionRepository.save(tx);
 
-            PaymentEvent ev = PaymentEvent.builder()
-                    .transactionId(tx.getId())
-                    .stripeObjectId(pi.getId())
-                    .type("PAYMENT_INTENT_CREATED")
-                    .actor("SYSTEM")
-                    .createdAt(Instant.now())
-                    .build();
-            eventRepository.save(ev);
+            eventRepository.save(
+                    PaymentEvent.builder()
+                            .transactionId(tx.getId())
+                            .stripeObjectId(pi.getId())
+                            .type("PAYMENT_INTENT_CREATED")
+                            .actor("SYSTEM")
+                            .createdAt(Instant.now())
+                            .build()
+            );
 
-            return tx;
+            // ✅ Return wrapper (Transaction + clientSecret)
+            return new CreateTransactionResult(
+                    tx,
+                    pi.getClientSecret()
+            );
         } catch (StripeException e) {
             throw new RuntimeException("Stripe PI create failed: " + e.getMessage(), e);
         }
@@ -132,48 +136,63 @@ public class TransactionServiceImpl implements TransactionService {
 
             PaymentIntent pi = PaymentIntent.retrieve(
                     tx.getStripePaymentIntentId(),
-                    retrieveParams,  // <--- params here
-                    null             // <--- RequestOptions (optional), null for default
+                    retrieveParams,
+                    null
             );
 
-            PaymentIntentCaptureParams captureParams = PaymentIntentCaptureParams.builder()
-                    .addExpand("charges")
-                    .build();
-            PaymentIntent captured = pi.capture(captureParams);
-
-
+            PaymentIntent captured = pi;
             String chargeId = null;
 
+            // Only capture if still requires capture
+            if ("requires_capture".equals(pi.getStatus())) {
+                PaymentIntentCaptureParams captureParams = PaymentIntentCaptureParams.builder()
+                        .addExpand("charges")
+                        .build();
+                captured = pi.capture(captureParams);
+            }
+
+            if ("requires_confirmation".equals(pi.getStatus())) {
+                PaymentIntentConfirmParams confirmParams = PaymentIntentConfirmParams.builder()
+                        .setPaymentMethod(pi.getPaymentMethod())
+                        .build();
+                pi = pi.confirm(confirmParams);  // now PaymentIntent is confirmed
+            }
+
+            // Get charge ID safely
             if (captured.getLatestChargeObject() != null) {
                 chargeId = captured.getLatestChargeObject().getId();
+            } else if (captured.getLatestCharge() != null) {
+                chargeId = captured.getLatestCharge();
             }
 
             if (chargeId == null) {
                 throw new RuntimeException("Stripe did not return a charge ID after capture");
             }
 
-            tx.setStripeChargeId(chargeId);
-            tx.setStatus(Transaction.TransactionStatus.RELEASED);
-            tx.setUpdatedAt(Instant.now());
-            transactionRepository.save(tx);
+            // Only update DB if not already set
+            if (tx.getStripeChargeId() == null) {
+                tx.setStripeChargeId(chargeId);
+                tx.setStatus(Transaction.TransactionStatus.RELEASED);
+                tx.setUpdatedAt(Instant.now());
+                transactionRepository.save(tx);
 
-            PaymentEvent ev = PaymentEvent.builder()
-                    .transactionId(tx.getId())
-                    .stripeObjectId(captured.getId())
-                    .type("CAPTURED")
-                    .actor("ADMIN")
-                    .createdAt(Instant.now())
-                    .build();
-            eventRepository.save(ev);
+                PaymentEvent ev = PaymentEvent.builder()
+                        .transactionId(tx.getId())
+                        .stripeObjectId(captured.getId())
+                        .type("CAPTURED")
+                        .actor("ADMIN")
+                        .createdAt(Instant.now())
+                        .build();
+                eventRepository.save(ev);
+            }
 
-            //return captured;
             return new CaptureResponse(
                     tx.getId(),
                     captured.getId(),
                     chargeId,
                     tx.getStatus().name()
             );
-            
+
         } catch (StripeException e) {
             throw new RuntimeException("Stripe capture failed: " + e.getMessage(), e);
         }
@@ -297,3 +316,17 @@ public class TransactionServiceImpl implements TransactionService {
 
 
 }
+
+// first hit this endpoint to create & authorize payment intent: with bearer token
+// http://localhost:8080/api/transactions
+
+// then hit this endpoint to start PaymentIntent capture using Stripe secret key as bearer token
+// https://api.stripe.com/v1/payment_intents/pi_3SSEbDGaACRSC93z1eFcN40w
+// then again but with /confirm
+//https://api.stripe.com/v1/payment_intents/pi_3SSEbDGaACRSC93z1eFcN40w/confirm
+
+// then this endpoint:
+// http://localhost:8080/api/transactions/69130c809a462c262a5a2b05/release  --> to release escrow
+
+// and finally this endpoint to refund:
+// http://localhost:8080/api/transactions/69130c809a462c262a5a2b05/refund
