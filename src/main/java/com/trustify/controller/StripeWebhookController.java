@@ -42,21 +42,25 @@ public class StripeWebhookController {
 
         switch (type) {
             case "payment_intent.succeeded":
-            case "payment_intent.amount_capturable_updated":
-                String piId = ((com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null)).getId();
-                transactionService.handlePaymentIntentSucceeded(piId);
+            case "payment_intent.amount_capturable_updated": {
+                var pi = (com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null);
+                if (pi != null) transactionService.handlePaymentIntentSucceeded(pi.getId());
                 break;
-            case "payment_intent.canceled":
-                String piId2 = ((com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null)).getId();
-                transactionService.handlePaymentIntentCancelled(piId2);
+            }
+            case "payment_intent.canceled": {
+                var pi = (com.stripe.model.PaymentIntent) event.getDataObjectDeserializer().getObject().orElse(null);
+                if (pi != null) transactionService.handlePaymentIntentCancelled(pi.getId());
                 break;
-            case "charge.refunded":
-                // handle refunds if needed
+            }
+            case "charge.refunded": {
+                // optionally handle refunds
                 break;
+            }
             default:
-                // log
+                // log or ignore
         }
 
         return ResponseEntity.ok("received");
     }
+
 }
