@@ -4,10 +4,11 @@ import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
-import com.stripe.model.Transfer;
+import com.stripe.param.PaymentIntentCaptureParams;
 import com.stripe.param.PaymentIntentCreateParams;
+import com.stripe.param.PaymentIntentRetrieveParams;
 import com.stripe.param.RefundCreateParams;
-import com.stripe.param.TransferCreateParams;
+import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
 import com.trustify.model.PaymentEvent;
 import com.trustify.model.Transaction;
@@ -21,7 +22,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 @Service
@@ -70,14 +70,16 @@ public class TransactionServiceImpl implements TransactionService {
 
         try {
             // create PaymentIntent with manual capture (escrow)
-            PaymentIntent.CreateParams params = PaymentIntent.CreateParams.builder()
-                    .setAmount(req.getAmountCents())
-                    .setCurrency(req.getCurrency() != null ? req.getCurrency() : "usd")
-                    .setCaptureMethod(PaymentIntent.CreateParams.CaptureMethod.MANUAL)
-                    .putMetadata("listingId", req.getListingId())
-                    .putMetadata("buyerId", req.getBuyerId())
-                    .putMetadata("sellerId", req.getSellerId())
-                    .build();
+            PaymentIntentCreateParams params =
+                    PaymentIntentCreateParams.builder()
+                            .setAmount(req.getAmountCents())
+                            .setCurrency(req.getCurrency() != null ? req.getCurrency() : "usd")
+                            .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
+                            .addPaymentMethodType("card")
+                            .putMetadata("listingId", req.getListingId())
+                            .putMetadata("buyerId", req.getBuyerId())
+                            .putMetadata("sellerId", req.getSellerId())
+                            .build();
 
             PaymentIntent pi = PaymentIntent.create(params);
 
@@ -115,7 +117,7 @@ public class TransactionServiceImpl implements TransactionService {
 
     // ---------- capture (release escrow) ----------
     @Override
-    public PaymentIntent capture(String transactionId) {
+    public CaptureResponse capture(String transactionId) {
         Stripe.apiKey = stripeSecret;
         Transaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
@@ -124,13 +126,30 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("No payment intent present");
 
         try {
-            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
-            PaymentIntent captured = pi.capture(); // capture immediately
+            PaymentIntentRetrieveParams retrieveParams = PaymentIntentRetrieveParams.builder()
+                    .addExpand("charges")
+                    .build();
 
-            // safe: check charges list for id
+            PaymentIntent pi = PaymentIntent.retrieve(
+                    tx.getStripePaymentIntentId(),
+                    retrieveParams,  // <--- params here
+                    null             // <--- RequestOptions (optional), null for default
+            );
+
+            PaymentIntentCaptureParams captureParams = PaymentIntentCaptureParams.builder()
+                    .addExpand("charges")
+                    .build();
+            PaymentIntent captured = pi.capture(captureParams);
+
+
             String chargeId = null;
-            if (captured.getCharges() != null && captured.getCharges().getData() != null && !captured.getCharges().getData().isEmpty()) {
-                chargeId = captured.getCharges().getData().get(0).getId();
+
+            if (captured.getLatestChargeObject() != null) {
+                chargeId = captured.getLatestChargeObject().getId();
+            }
+
+            if (chargeId == null) {
+                throw new RuntimeException("Stripe did not return a charge ID after capture");
             }
 
             tx.setStripeChargeId(chargeId);
@@ -147,7 +166,14 @@ public class TransactionServiceImpl implements TransactionService {
                     .build();
             eventRepository.save(ev);
 
-            return captured;
+            //return captured;
+            return new CaptureResponse(
+                    tx.getId(),
+                    captured.getId(),
+                    chargeId,
+                    tx.getStatus().name()
+            );
+            
         } catch (StripeException e) {
             throw new RuntimeException("Stripe capture failed: " + e.getMessage(), e);
         }

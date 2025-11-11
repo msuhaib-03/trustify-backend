@@ -40,6 +40,7 @@ public class SecurityConfig {
                                 "/listings/**",
                                 "/chats/**",
                                 "/stripe/**",
+                                "/transactions/**",
                                 "/payments/**",
                                 "/socket.io/**",
                                 "/oauth/**")

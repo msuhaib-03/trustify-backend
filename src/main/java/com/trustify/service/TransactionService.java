@@ -1,6 +1,7 @@
 package com.trustify.service;
 
 import com.stripe.model.PaymentIntent;
+import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
 import com.trustify.model.Transaction;
 import org.springframework.data.domain.Page;
@@ -13,7 +14,7 @@ public interface TransactionService {
     Transaction createAndAuthorize(CreateTransactionRequest req);
 
     // capture / release escrow
-    PaymentIntent capture(String transactionId);
+    CaptureResponse capture(String transactionId);
 
     // refund or cancel
     void refund(String transactionId, Long amountCents); // amountCents null => full

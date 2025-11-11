@@ -1,6 +1,7 @@
 package com.trustify.controller;
 
 import com.stripe.model.PaymentIntent;
+import com.trustify.dto.CaptureResponse;
 import com.trustify.dto.CreateTransactionRequest;
 import com.trustify.dto.TransactionResponse;
 import com.trustify.model.Transaction;
@@ -23,6 +24,7 @@ public class TransactionsController {
 
     private final TransactionService transactionService;
 
+    // payment intent creation and authorization
     @PostMapping
     public ResponseEntity<?> createTransaction(@RequestBody CreateTransactionRequest req) {
         Transaction tx = transactionService.createAndAuthorize(req);
@@ -44,7 +46,7 @@ public class TransactionsController {
 
     @PostMapping("/{id}/release")
     public ResponseEntity<?> release(@PathVariable String id) {
-        PaymentIntent captured = transactionService.capture(id);
+        CaptureResponse captured = transactionService.capture(id);
         return ResponseEntity.ok(captured);
     }
 
