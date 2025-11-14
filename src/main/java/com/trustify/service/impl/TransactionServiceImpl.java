@@ -174,9 +174,18 @@ public class TransactionServiceImpl implements TransactionService {
             PaymentIntent captured;
             if ("requires_capture".equals(pi.getStatus())) {
                 PaymentIntentCaptureParams.Builder capBuilder = PaymentIntentCaptureParams.builder().addExpand("charges");
-                if (amountToCaptureCents != null && amountToCaptureCents > 0 && amountToCaptureCents <= tx.getAuthorizedAmountCents()) {
+                Long authorizedAmount =
+                        tx.getAuthorizedAmountCents() != null ? tx.getAuthorizedAmountCents() : 0L;
+
+                if (amountToCaptureCents != null &&
+                        amountToCaptureCents > 0 &&
+                        amountToCaptureCents <= authorizedAmount) {
+
                     capBuilder.setAmountToCapture(amountToCaptureCents);
                 }
+//                if (amountToCaptureCents != null && amountToCaptureCents > 0 && amountToCaptureCents <= tx.getAuthorizedAmountCents()) {
+//                    capBuilder.setAmountToCapture(amountToCaptureCents);
+//                }
                 captured = pi.capture(capBuilder.build());
             } else {
                 if ("requires_confirmation".equals(pi.getStatus())) {
