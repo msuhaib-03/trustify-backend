@@ -1,10 +1,7 @@
 package com.trustify.controller;
 
 import com.stripe.model.PaymentIntent;
-import com.trustify.dto.CaptureResponse;
-import com.trustify.dto.CreateTransactionRequest;
-import com.trustify.dto.CreateTransactionResult;
-import com.trustify.dto.TransactionResponse;
+import com.trustify.dto.*;
 import com.trustify.model.Transaction;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Map;
 
 @RestController
@@ -31,13 +29,6 @@ public class TransactionsController {
         CreateTransactionResult result = transactionService.createAndAuthorize(req);
         Transaction tx = result.getTransaction();
 
-//        String clientSecret = null;
-//        try {
-//            com.stripe.Stripe.apiKey = stripeSecret;
-//            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
-//            clientSecret = pi.getClientSecret();
-//        } catch (Exception ignored) {}
-
         TransactionResponse resp = new TransactionResponse();
         resp.setTransactionId(tx.getId());
         resp.setStripeClientSecret(result.getStripeClientSecret());
@@ -46,11 +37,6 @@ public class TransactionsController {
         return ResponseEntity.ok(resp);
     }
 
-    @PostMapping("/{id}/release")
-    public ResponseEntity<?> release(@PathVariable String id) {
-        CaptureResponse captured = transactionService.capture(id);
-        return ResponseEntity.ok(captured);
-    }
 
     @PostMapping("/{id}/refund")
     public ResponseEntity<?> refund(@PathVariable String id, @RequestParam(required = false) Long amountCents) {
@@ -63,4 +49,55 @@ public class TransactionsController {
         Transaction tx = transactionService.getTransaction(id);
         return ResponseEntity.ok(tx);
     }
+
+    // ------------------------------------------------------ //
+
+    // ---------------- Request Release (Buyer initiates inspection / asks for release) ----------------
+    @PostMapping("/{id}/request-release")
+    public ResponseEntity<?> requestRelease(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, String> body,
+            Principal principal) {
+
+        String userId = principal.getName();
+        transactionService.requestRelease(id, userId, body != null ? body.get("note") : null);
+        return ResponseEntity.ok(Map.of("message", "Release requested"));
+    }
+
+
+    // ---------------- Confirm Release (Admin / Seller finalizes) ----------------
+    @PostMapping("/{id}/confirm-release")
+    public ResponseEntity<?> confirmRelease(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body,
+            Principal principal) {
+
+        Long amountToCaptureCents = null;
+        if (body != null && body.get("amountToCaptureCents") != null) {
+            amountToCaptureCents = Long.valueOf(body.get("amountToCaptureCents").toString());
+        }
+
+        CaptureResponse resp = transactionService.capture(id, principal.getName(), amountToCaptureCents);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ---------------- Open Dispute ----------------
+    @PostMapping("/{id}/dispute")
+    public ResponseEntity<?> openDispute(@PathVariable String id,
+                                         @RequestBody DisputeRequest disputeRequest,
+                                         Principal principal) {
+        transactionService.openDispute(id, principal.getName(), disputeRequest);
+        return ResponseEntity.ok(Map.of("message", "Dispute opened"));
+    }
+
+    // ---------------- Admin Resolve Dispute ----------------
+    @PostMapping("/{id}/admin/resolve-dispute")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> resolveDispute(@PathVariable String id,
+                                            @RequestBody ResolveDisputeRequest req,
+                                            Principal principal) {
+        transactionService.adminResolveDispute(id, principal.getName(), req);
+        return ResponseEntity.ok(Map.of("message", "Dispute resolved"));
+    }
+
 }

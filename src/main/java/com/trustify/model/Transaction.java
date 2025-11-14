@@ -24,6 +24,7 @@ public class Transaction {
     private String listingId;
     private String buyerId;   // could be email or userId
     private String sellerId;
+    private String getBuyerUsername;
 
     private TransactionType type; // SALE or RENT
 
@@ -36,6 +37,16 @@ public class Transaction {
     private String stripePaymentIntentId;
     private String stripeChargeId;
 
+    // ------------- Manual release fields -------------
+    private Instant releaseRequestedAt;
+    private String releaseRequestedBy;
+    private String releaseRequestedNote;
+
+    private Long authorizedAmountCents;
+    private Long amountCapturedCents;
+    private Long platformFeeCents;
+    private String sellerStripeAccountId;
+
     private Map<String,Object> metadata;
 
     @CreatedDate
@@ -46,6 +57,6 @@ public class Transaction {
     public enum TransactionType { SALE, RENT }
 
     public enum TransactionStatus {
-        PENDING, AUTHORIZED, HELD, RELEASED, REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW
+        PENDING, PENDING_DISPUTE ,AUTHORIZED, HELD, PENDING_RELEASE , PARTIALLY_RELEASED ,RELEASED, REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW
     }
 }

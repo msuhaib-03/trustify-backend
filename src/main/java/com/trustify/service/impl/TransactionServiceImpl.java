@@ -2,12 +2,12 @@ package com.trustify.service.impl;
 
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Dispute;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
+import com.stripe.model.Transfer;
 import com.stripe.param.*;
-import com.trustify.dto.CaptureResponse;
-import com.trustify.dto.CreateTransactionRequest;
-import com.trustify.dto.CreateTransactionResult;
+import com.trustify.dto.*;
 import com.trustify.model.PaymentEvent;
 import com.trustify.model.Transaction;
 import com.trustify.repository.PaymentEventRepository;
@@ -20,6 +20,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -92,6 +94,7 @@ public class TransactionServiceImpl implements TransactionService {
                     .currency(pi.getCurrency())
                     .status(Transaction.TransactionStatus.AUTHORIZED)
                     .stripePaymentIntentId(pi.getId())
+                    .authorizedAmountCents(req.getAmountCents())
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -118,87 +121,115 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
-
-    // ---------- capture (release escrow) ----------
+    // ---------------- Request Release (Step 1) ----------------
     @Override
-    public CaptureResponse capture(String transactionId) {
+    public void requestRelease(String id, String userId, String note) {
+        Transaction tx = getTransaction(id);
+        if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can request release");
+        if (!tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED)) {
+            throw new RuntimeException("Transaction not in authorized state");
+        }
+
+        tx.setStatus(Transaction.TransactionStatus.PENDING_RELEASE);
+        tx.setReleaseRequestedAt(Instant.now());
+        tx.setReleaseRequestedBy(userId);
+        tx.setReleaseRequestedNote(note);
+        transactionRepository.save(tx);
+
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("RELEASE_REQUESTED")
+                .actor(userId)
+                .createdAt(Instant.now())
+                .build()
+        );
+
+        // TODO: enqueue email notification to seller
+    }
+
+    // ---------------- Confirm Release (Step 2) ----------------
+    @Override
+    public CaptureResponse capture(String transactionId, String actorUserId, Long amountToCaptureCents) {
         Stripe.apiKey = stripeSecret;
         Transaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
 
-        if (tx.getStripePaymentIntentId() == null)
+        if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_RELEASE) &&
+                !tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED) &&
+                !tx.getStatus().equals(Transaction.TransactionStatus.PARTIALLY_RELEASED)) {
+            throw new RuntimeException("Transaction not in releasable state");
+        }
+
+        if (tx.getStripePaymentIntentId() == null) {
             throw new RuntimeException("No payment intent present");
+        }
 
         try {
             PaymentIntentRetrieveParams retrieveParams = PaymentIntentRetrieveParams.builder()
                     .addExpand("charges")
                     .build();
 
-            PaymentIntent pi = PaymentIntent.retrieve(
-                    tx.getStripePaymentIntentId(),
-                    retrieveParams,
-                    null
-            );
+            PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId(), retrieveParams, null);
 
-            PaymentIntent captured = pi;
-            String chargeId = null;
-
-            // Only capture if still requires capture
+            PaymentIntent captured;
             if ("requires_capture".equals(pi.getStatus())) {
-                PaymentIntentCaptureParams captureParams = PaymentIntentCaptureParams.builder()
-                        .addExpand("charges")
-                        .build();
-                captured = pi.capture(captureParams);
+                PaymentIntentCaptureParams.Builder capBuilder = PaymentIntentCaptureParams.builder().addExpand("charges");
+                if (amountToCaptureCents != null && amountToCaptureCents > 0 && amountToCaptureCents <= tx.getAuthorizedAmountCents()) {
+                    capBuilder.setAmountToCapture(amountToCaptureCents);
+                }
+                captured = pi.capture(capBuilder.build());
+            } else {
+                if ("requires_confirmation".equals(pi.getStatus())) {
+                    PaymentIntentConfirmParams confirmParams = PaymentIntentConfirmParams.builder()
+                            .setPaymentMethod(pi.getPaymentMethod())
+                            .build();
+                    pi = pi.confirm(confirmParams);
+                }
+                captured = pi;
             }
 
-            if ("requires_confirmation".equals(pi.getStatus())) {
-                PaymentIntentConfirmParams confirmParams = PaymentIntentConfirmParams.builder()
-                        .setPaymentMethod(pi.getPaymentMethod())
-                        .build();
-                pi = pi.confirm(confirmParams);  // now PaymentIntent is confirmed
-            }
+            // Determine captured amount
+            long capturedAmount = captured.getAmountReceived() != null ? captured.getAmountReceived() : captured.getAmount();
+            String chargeId = captured.getLatestCharge() != null ? captured.getLatestCharge() :
+                    (captured.getLatestChargeObject() != null ? captured.getLatestChargeObject().getId() : null);
+            if (chargeId == null) throw new RuntimeException("Stripe did not return a charge ID after capture");
 
-            // Get charge ID safely
-            if (captured.getLatestChargeObject() != null) {
-                chargeId = captured.getLatestChargeObject().getId();
-            } else if (captured.getLatestCharge() != null) {
-                chargeId = captured.getLatestCharge();
-            }
+            // Save captured details
+            tx.setStripeChargeId(chargeId);
+            tx.setAmountCapturedCents(capturedAmount);
+            tx.setStatus(capturedAmount < tx.getAuthorizedAmountCents() ? Transaction.TransactionStatus.PARTIALLY_RELEASED : Transaction.TransactionStatus.RELEASED);
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
 
-            if (chargeId == null) {
-                throw new RuntimeException("Stripe did not return a charge ID after capture");
-            }
+            // Handle Transfer minus platform fees
+            long platformFeeCents = tx.getPlatformFeeCents() != null ? tx.getPlatformFeeCents() : 0;
+            long amountToTransfer = capturedAmount - platformFeeCents;
 
-            // Only update DB if not already set
-            if (tx.getStripeChargeId() == null) {
-                tx.setStripeChargeId(chargeId);
-                tx.setStatus(Transaction.TransactionStatus.RELEASED);
-                tx.setUpdatedAt(Instant.now());
+            if (tx.getSellerStripeAccountId() != null && amountToTransfer > 0) {
+                Map<String, Object> transferParams = new HashMap<>();
+                transferParams.put("amount", amountToTransfer);
+                transferParams.put("currency", tx.getCurrency());
+                transferParams.put("destination", tx.getSellerStripeAccountId());
+                Transfer transfer = Transfer.create(transferParams);
+                // Optional: tx.setStripeTransferId(transfer.getId());
                 transactionRepository.save(tx);
-
-                PaymentEvent ev = PaymentEvent.builder()
-                        .transactionId(tx.getId())
-                        .stripeObjectId(captured.getId())
-                        .type("CAPTURED")
-                        .actor("ADMIN")
-                        .createdAt(Instant.now())
-                        .build();
-                eventRepository.save(ev);
             }
 
-            return new CaptureResponse(
-                    tx.getId(),
-                    captured.getId(),
-                    chargeId,
-                    tx.getStatus().name()
+            eventRepository.save(PaymentEvent.builder()
+                    .transactionId(tx.getId())
+                    .stripeObjectId(captured.getId())
+                    .type("CAPTURED")
+                    .actor(actorUserId)
+                    .createdAt(Instant.now())
+                    .build()
             );
+
+            return new CaptureResponse(tx.getId(), captured.getId(), chargeId, tx.getStatus().name());
 
         } catch (StripeException e) {
             throw new RuntimeException("Stripe capture failed: " + e.getMessage(), e);
         }
     }
-
-
 
     // ---------- refund ----------
     @Override
@@ -230,6 +261,81 @@ public class TransactionServiceImpl implements TransactionService {
 
         } catch (StripeException e) {
             throw new RuntimeException("Stripe refund failed: " + e.getMessage(), e);
+        }
+    }
+
+
+    // ---------------- Dispute (Scaffold) ----------------
+    @Override
+    public void openDispute(String txId, String userId, DisputeRequest req) {
+        Transaction tx = getTransaction(txId);
+        if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can open dispute");
+
+        // TODO: save dispute to DB
+        // Dispute dispute = new Dispute(...);
+        // disputeRepository.save(dispute);
+
+        tx.setStatus(Transaction.TransactionStatus.PENDING_DISPUTE);
+        transactionRepository.save(tx);
+
+        // TODO: notify admin
+    }
+
+    @Override
+    public void adminResolveDispute(String transactionId, String adminUserId, ResolveDisputeRequest req) {
+        Transaction tx = getTransaction(transactionId);
+
+        // Optional: check admin role if needed
+        // if (!isAdmin(adminUserId)) throw new RuntimeException("Unauthorized");
+
+        if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_DISPUTE)) {
+            throw new RuntimeException("Transaction not in dispute state");
+        }
+
+        Long deductionCents = req.getDeductionCents() != null ? req.getDeductionCents() : 0L;
+        Long platformFeeCents = tx.getPlatformFeeCents() != null ? tx.getPlatformFeeCents() : 0L;
+
+        try {
+            // 1️⃣ Refund buyer if requested
+            if (req.isRefundBuyer() && tx.getStripeChargeId() != null) {
+                long refundAmount = tx.getAmountCapturedCents() - deductionCents;
+                RefundCreateParams params = RefundCreateParams.builder()
+                        .setCharge(tx.getStripeChargeId())
+                        .setAmount(refundAmount)
+                        .build();
+                Refund refund = Refund.create(params);
+                tx.setStatus(Transaction.TransactionStatus.REFUNDED);
+            }
+
+            // 2️⃣ Transfer remaining to seller (minus deduction + platform fees)
+            if (tx.getSellerStripeAccountId() != null && tx.getAmountCapturedCents() > 0) {
+                long amountToTransfer = tx.getAmountCapturedCents() - deductionCents - platformFeeCents;
+                if (amountToTransfer > 0) {
+                    Map<String, Object> transferParams = Map.of(
+                            "amount", amountToTransfer,
+                            "currency", tx.getCurrency(),
+                            "destination", tx.getSellerStripeAccountId()
+                    );
+                    com.stripe.model.Transfer transfer = com.stripe.model.Transfer.create(transferParams);
+                    // Optionally store transfer ID
+                }
+            }
+
+            // 3️⃣ Update transaction and save
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            // 4️⃣ Log event
+            eventRepository.save(PaymentEvent.builder()
+                    .transactionId(tx.getId())
+                    .type("DISPUTE_RESOLVED")
+                    .actor(adminUserId)
+                    .createdAt(Instant.now())
+                    .build()
+            );
+
+        } catch (StripeException e) {
+            throw new RuntimeException("Stripe operation failed: " + e.getMessage(), e);
         }
     }
 
