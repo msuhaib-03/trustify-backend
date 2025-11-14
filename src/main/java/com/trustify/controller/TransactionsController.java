@@ -101,3 +101,22 @@ public class TransactionsController {
     }
 
 }
+
+
+
+// All the endpoints are secured, therefore will require a valid bearer token in the Authorization header.
+// First hit this endpoint with valid bearer token:
+// Make sure that the body contains the same email/mail that user logged in from.
+// http://localhost:8080/api/transactions
+
+// Then this endpoint with bearer token and paymentintent id from above response:
+// https://api.stripe.com/v1/payment_intents/pi_id/confirm
+
+// Then this endpoint with bearer token and transaction id from first response:
+// http://localhost:8080/api/transactions/transaction-id/request-release
+
+// Then this endpoint with bearer token and transaction id from first response:
+// http://localhost:8080/api/transactions/transaction-id/confirm-release
+
+// Then finally this endpoint with bearer token and transaction id from first response:
+// http://localhost:8080/api/transactions/transaction-id/refund?amountCents=<amount-to-refund>

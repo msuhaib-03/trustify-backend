@@ -431,17 +431,3 @@ public class TransactionServiceImpl implements TransactionService {
 
 
 }
-
-// first hit this endpoint to create & authorize payment intent: with bearer token
-// http://localhost:8080/api/transactions
-
-// then hit this endpoint to start PaymentIntent capture using Stripe secret key as bearer token
-// https://api.stripe.com/v1/payment_intents/pi_3SSEbDGaACRSC93z1eFcN40w
-// then again but with /confirm
-//https://api.stripe.com/v1/payment_intents/pi_3SSEbDGaACRSC93z1eFcN40w/confirm
-
-// then this endpoint:
-// http://localhost:8080/api/transactions/69130c809a462c262a5a2b05/release  --> to release escrow
-
-// and finally this endpoint to refund:
-// http://localhost:8080/api/transactions/69130c809a462c262a5a2b05/refund
