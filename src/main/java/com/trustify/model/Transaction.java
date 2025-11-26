@@ -27,6 +27,9 @@ public class Transaction {
     private String sellerId;
     private String getBuyerUsername;
 
+    private String buyerEmail;
+    private String sellerEmail;
+
     private TransactionType type; // SALE or RENT
 
     private long amountCents;
@@ -49,10 +52,13 @@ public class Transaction {
     private Long platformFeeCents;
     private String sellerStripeAccountId;
 
+    private LocalDateTime shippedAt;
     private LocalDate rentalStartDate;
-    private LocalDate rentalEndDate;
+    private LocalDate rentalEnd;
     private boolean renterPickedUp;
     private boolean renterReturned;
+    private boolean damageReported;
+
 
     private Map<String,Object> metadata;
 
@@ -68,6 +74,7 @@ public class Transaction {
         PENDING_RELEASE , PARTIALLY_RELEASED ,RELEASED,
         REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW,
         RENTAL_IN_PROGRESS, RENTAL_RETURNED, DAMAGE_RESOLVED,
-        COMPLETED
+        COMPLETED, RENT_COMPLETED, RENT_ACTIVE, DELIVERED_AUTO,
+        AUTO_CANCELLED,
     }
 }
