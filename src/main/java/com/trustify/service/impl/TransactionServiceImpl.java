@@ -2,14 +2,15 @@ package com.trustify.service.impl;
 
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
-import com.stripe.model.Dispute;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
 import com.stripe.model.Transfer;
 import com.stripe.param.*;
 import com.trustify.dto.*;
+import com.trustify.model.Dispute;
 import com.trustify.model.PaymentEvent;
 import com.trustify.model.Transaction;
+import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
 import com.trustify.service.TransactionService;
@@ -30,6 +31,7 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final PaymentEventRepository eventRepository;
+    private final DisputeRepository disputeRepository;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -280,14 +282,30 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction tx = getTransaction(txId);
         if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can open dispute");
 
-        // TODO: save dispute to DB
-        // Dispute dispute = new Dispute(...);
-        // disputeRepository.save(dispute);
+        // ✅ Save dispute to DB
+        Dispute dispute = Dispute.builder()
+                .transactionId(tx.getId())
+                .openedBy(userId)
+                .reason(req.getReason())
+                .evidence(req.getEvidence())
+                .status("OPEN")
+                .createdAt(Instant.now())
+                .build();
+        disputeRepository.save(dispute);
 
+        // ✅ Update transaction status
         tx.setStatus(Transaction.TransactionStatus.PENDING_DISPUTE);
         transactionRepository.save(tx);
 
-        // TODO: notify admin
+        // notify admin
+        // ✅ Optional: notify admin (can be email or dashboard flag)
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("DISPUTE_OPENED")
+                .actor(userId)
+                .createdAt(Instant.now())
+                .build()
+        );
     }
 
     @Override
