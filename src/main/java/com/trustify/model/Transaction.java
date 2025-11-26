@@ -9,6 +9,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -29,7 +30,8 @@ public class Transaction {
     private TransactionType type; // SALE or RENT
 
     private long amountCents;
-    private long depositCents; // for rent
+    private Long depositCents; // for rent
+    private Long rentalFeeCents;     // part of amountCents
     private String currency;
 
     private TransactionStatus status;
@@ -47,6 +49,11 @@ public class Transaction {
     private Long platformFeeCents;
     private String sellerStripeAccountId;
 
+    private LocalDate rentalStartDate;
+    private LocalDate rentalEndDate;
+    private boolean renterPickedUp;
+    private boolean renterReturned;
+
     private Map<String,Object> metadata;
 
     @CreatedDate
@@ -59,6 +66,8 @@ public class Transaction {
     public enum TransactionStatus {
         PENDING, PENDING_DISPUTE ,AUTHORIZED, HELD,
         PENDING_RELEASE , PARTIALLY_RELEASED ,RELEASED,
-        REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW
+        REFUNDED, CANCELLED, FAILED, MANUAL_REVIEW,
+        RENTAL_IN_PROGRESS, RENTAL_RETURNED, DAMAGE_RESOLVED,
+        COMPLETED
     }
 }

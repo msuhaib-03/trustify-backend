@@ -100,6 +100,34 @@ public class TransactionsController {
         return ResponseEntity.ok(Map.of("message", "Dispute resolved"));
     }
 
+    // ----------------- RENTAL SPECIFIC ACTIONS -----------------
+    @PostMapping("/{id}/start-rental")
+    public ResponseEntity<?> startRental(@PathVariable String id, Principal principal) {
+        transactionService.startRental(id, principal.getName());
+        return ResponseEntity.ok(Map.of("message", "Rental started"));
+    }
+
+    @PostMapping("/{id}/complete-rental")
+    public ResponseEntity<?> completeRental(@PathVariable String id, Principal principal) {
+        transactionService.completeRental(id, principal.getName());
+        return ResponseEntity.ok(Map.of("message", "Rental completed"));
+    }
+
+    @PostMapping("/{id}/deduct-damage")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SELLER')")
+    public ResponseEntity<?> deductDamage(@PathVariable String id, @RequestParam Long damageAmountCents) {
+        transactionService.deductDamage(id, damageAmountCents);
+        return ResponseEntity.ok(Map.of("message", "Damage processed"));
+    }
+
+    @PostMapping("/{id}/finalize-refund")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SELLER')")
+    public ResponseEntity<?> finalizeRefund(@PathVariable String id) {
+        transactionService.finalizeRefund(id);
+        return ResponseEntity.ok(Map.of("message", "Deposit refunded"));
+    }
+
+
 }
 
 
@@ -120,3 +148,7 @@ public class TransactionsController {
 
 // Then finally this endpoint with bearer token and transaction id from first response:
 // http://localhost:8080/api/transactions/transaction-id/refund?amountCents=<amount-to-refund>
+
+// ------------------------------------>>>>>>>>>>> ENDPOINTS FOR SELL AND RENT ARE DIFFERENT
+
+

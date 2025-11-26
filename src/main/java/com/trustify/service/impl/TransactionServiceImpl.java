@@ -388,6 +388,117 @@ public class TransactionServiceImpl implements TransactionService {
         });
     }
 
+    // -------------------- Rental-specific methods --------------------
+
+    public void startRental(String transactionId, String userEmail) {
+        Transaction tx = getTransaction(transactionId);
+        if (!tx.getBuyerId().equals(userEmail)) {
+            throw new RuntimeException("Only renter can start rental");
+        }
+        tx.setRenterPickedUp(true);
+        tx.setStatus(Transaction.TransactionStatus.RENTAL_IN_PROGRESS);
+        transactionRepository.save(tx);
+    }
+
+    public void completeRental(String transactionId, String userEmail) {
+        Transaction tx = getTransaction(transactionId);
+        if (!tx.getBuyerId().equals(userEmail)) {
+            throw new RuntimeException("Only renter can complete rental");
+        }
+        tx.setRenterReturned(true);
+        tx.setStatus(Transaction.TransactionStatus.RENTAL_RETURNED);
+        transactionRepository.save(tx);
+    }
+
+    /**
+     * Deduct damage from the deposit.
+     *
+     * Strategy:
+     * 1) If the PI still requires_capture, capture `damageAmountCents` using your capture(...) method.
+     * 2) If PI already captured fully, create a Refund for the damage amount (or perform refund logic).
+     * 3) Refund the remainder of the deposit (deposit - damage) to the renter via refund(...).
+     *
+     * Note: We rely on existing capture(...) and refund(...) methods in this class.
+     */
+    public void deductDamage(String transactionId, Long damageAmountCents) {
+        Transaction tx = getTransaction(transactionId);
+
+        Long deposit = tx.getDepositCents() != null ? tx.getDepositCents() : 0L;
+        if (damageAmountCents > deposit) {
+            throw new RuntimeException("Damage exceeds deposit");
+        }
+
+        try {
+            // If PI still requires capture (deposit held but not captured), capture the damage amount
+            if (tx.getStripePaymentIntentId() != null && (tx.getStripeChargeId() == null)) {
+                // capture the damage amount from the AUTHORIZED PI
+                this.capture(transactionId, "SYSTEM", damageAmountCents);
+
+                // after capture, tx in DB will have stripeChargeId and amountCapturedCents
+                tx = getTransaction(transactionId); // refresh
+            } else {
+                // If charge already exists and you need to take money from the charge,
+                // you should create a refund of the remaining amount to buyer and/or transfer as needed.
+                // For simplicity: if already captured full amount, create a refund for (deposit - damage)
+                // and leave damage amount for seller (or implement merchant-side logic).
+            }
+
+            // Refund the remainder of deposit (deposit - damage) to buyer
+            Long refundAmount = deposit - damageAmountCents;
+            if (refundAmount > 0) {
+                // refund uses the tx.getStripeChargeId() which should exist after capture above
+                this.refund(transactionId, refundAmount);
+            }
+
+            tx.setStatus(Transaction.TransactionStatus.DAMAGE_RESOLVED);
+            tx.setUpdatedAt(Instant.now());
+            transactionRepository.save(tx);
+
+            eventRepository.save(PaymentEvent.builder()
+                    .transactionId(tx.getId())
+                    .type("DAMAGE_DEDUCTED")
+                    .actor("SYSTEM")
+                    .createdAt(Instant.now())
+                    .build()
+            );
+
+        } catch (RuntimeException e) {
+            throw e; // bubble up
+        }
+    }
+
+    /**
+     * Finalize refund (no damage) — refund entire deposit to renter.
+     */
+    public void finalizeRefund(String transactionId) {
+        Transaction tx = getTransaction(transactionId);
+
+        if (tx.getStripeChargeId() == null) {
+            // If charge is not yet created, try to capture 0 or cancel PI — but usually for deposit refund,
+            // charge must exist. For safety, attempt to capture 0 (noop) or cancel PI if applicable.
+            throw new RuntimeException("Cannot finalize refund: no charge present");
+        }
+
+        long deposit = (tx.getDepositCents() == null) ? 0L : tx.getDepositCents();
+
+        if (deposit > 0) {
+            this.refund(transactionId, deposit);
+        }
+
+        tx.setStatus(Transaction.TransactionStatus.COMPLETED);
+        tx.setUpdatedAt(Instant.now());
+        transactionRepository.save(tx);
+
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("DEPOSIT_REFUNDED")
+                .actor("SYSTEM")
+                .createdAt(Instant.now())
+                .build()
+        );
+    }
+
+
     // ---------- helper implementations ----------
     @Override
     public Transaction getTransaction(String id) {

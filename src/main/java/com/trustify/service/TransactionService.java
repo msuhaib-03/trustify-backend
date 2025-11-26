@@ -33,4 +33,11 @@ public interface TransactionService {
     // ---------- Transaction queries ----------
     Transaction getTransaction(String id);
     Page<Transaction> listForUser(String userId, Pageable pageable);
+
+    // --------- Rental specific ---------
+    void startRental(String transactionId, String userEmail);
+    void completeRental(String transactionId, String userEmail);
+    void finalizeRefund(String id);
+    void deductDamage(String id, Long damageAmountCents);
+
 }
