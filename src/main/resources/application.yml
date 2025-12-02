@@ -49,6 +49,14 @@ stripe:
     secret: ${STRIPE_WEBHOOK_SECRET}
   currency: PKR
 
+
+aws:
+  s3:
+    bucket: trustify-backend-images
+  region: ap-south-1
+  access-key-id: ${AWS_ACCESS_KEY_ID}
+  secret-access-key: ${AWS_SECRET_ACCESS_KEY}
+
 file:
   upload-dir: uploads/listings
 
