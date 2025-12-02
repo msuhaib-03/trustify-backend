@@ -59,6 +59,7 @@ public class Transaction {
     private boolean renterReturned;
     private boolean damageReported;
 
+    private boolean reminderSent = false;
 
     private Map<String,Object> metadata;
 
