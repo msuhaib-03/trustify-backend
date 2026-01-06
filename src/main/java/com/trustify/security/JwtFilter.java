@@ -1,5 +1,6 @@
 package com.trustify.security;
 
+import com.trustify.repository.TokenBlacklistRepository;
 import com.trustify.service.CustomUserDetailsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -23,6 +24,9 @@ public class JwtFilter extends OncePerRequestFilter {
     @Autowired
     private CustomUserDetailsService userDetailsService;
 
+    @Autowired
+    private TokenBlacklistRepository tokenBlacklistRepository;
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -39,6 +43,7 @@ public class JwtFilter extends OncePerRequestFilter {
             username = jwtUtil.extractUsername(jwtToken);
         }
 
+
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
@@ -51,9 +56,16 @@ public class JwtFilter extends OncePerRequestFilter {
                         new WebAuthenticationDetailsSource().buildDetails(request)
                 );
 
+                // Check if token is blacklisted
+                if(tokenBlacklistRepository.existsByToken(jwtToken)) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token is logged out");
+                    return;
+                }
+
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
         }
+
 
         filterChain.doFilter(request, response);
     }

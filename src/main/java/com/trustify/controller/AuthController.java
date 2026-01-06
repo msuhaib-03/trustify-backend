@@ -3,7 +3,9 @@ package com.trustify.controller;
 import com.trustify.dto.AuthResponse;
 import com.trustify.dto.LoginRequest;
 import com.trustify.dto.SignupRequest;
+import com.trustify.model.BlacklistedToken;
 import com.trustify.model.User;
+import com.trustify.repository.TokenBlacklistRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.security.JwtUtil;
 import com.trustify.service.CustomUserDetailsService;
@@ -18,6 +20,8 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collections;
 import java.util.Map;
 
@@ -33,6 +37,10 @@ public class AuthController {
 
     @Autowired
     PasswordEncoder passwordEncoder;
+
+
+    @Autowired
+    TokenBlacklistRepository tokenBlacklistRepository;
 
     @Autowired
     UserRepository userRepository;
@@ -77,6 +85,29 @@ public class AuthController {
             return ResponseEntity.status(401)
                     .body(Collections.singletonMap("error", "Invalid email or password"));
         }
+    }
+
+    // logout
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestHeader("Authorization") String authHeader) {
+
+        if(authHeader == null || !authHeader.startsWith("Bearer "))
+        {
+            return ResponseEntity.badRequest().body("Invalid Authorization Header");
+        }
+        String token = authHeader.substring(7);
+        LocalDateTime expiry = jwtUtil.extractExpiration(token)
+                .toInstant()
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
+
+        BlacklistedToken blacklisted = new BlacklistedToken();
+        blacklisted.setToken(token);
+        blacklisted.setExpiresAt(expiry);
+
+        tokenBlacklistRepository.save(blacklisted);
+
+        return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
     // ✅ Token Validation (for Postman testing)
