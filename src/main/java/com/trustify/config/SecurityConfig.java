@@ -36,13 +36,12 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http
-                //.cors(Customizer.withDefaults())
                 .cors(cors -> cors.configurationSource(corsConfig.corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
-                                "/api/auth/**",
+                                "/auth/**",
                                 "/health/**",
                                 "/users/**",
                                 "/auth/google/**",
