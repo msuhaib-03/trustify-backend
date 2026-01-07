@@ -52,13 +52,11 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfig = new CorsConfiguration();
         corsConfig.setAllowedOrigins(List.of(
-                "http://localhost:3000/api",
-                "http://localhost:5173/api",
-                "http://localhost:5174/api",
-                "http://52.66.8.174:8080/api",
-                "http://localhost:8080/api",
-                "http://localhost:8080/api",
-                "http://localhost:3001/api"
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:8080",
+                "http://localhost:3001"
 
         ));
 
