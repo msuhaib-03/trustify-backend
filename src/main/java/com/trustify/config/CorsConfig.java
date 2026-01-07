@@ -24,9 +24,11 @@ public class CorsConfig {
         ));
 
         corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        corsConfig.setAllowedHeaders(List.of("*"));
+        //corsConfig.setAllowedHeaders(List.of("*"));
         corsConfig.setAllowCredentials(true);
-        corsConfig.setExposedHeaders(List.of("Content-Type","Authorization"));
+        //corsConfig.setExposedHeaders(List.of("Content-Type","Authorization"));
+        corsConfig.setAllowedHeaders(List.of("Content-Type","Authorization"));
+        corsConfig.setExposedHeaders(List.of("Authorization"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);
