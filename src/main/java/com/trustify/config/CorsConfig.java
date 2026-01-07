@@ -13,7 +13,7 @@ public class CorsConfig {
     // CORS configuration can be added here if needed in the future
 
     @Bean
-    public CorsConfigurationSource corsConfiguration() {
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration corsConfig = new CorsConfiguration();
         corsConfig.setAllowedOrigins(List.of(
                 "http://localhost:3000",
