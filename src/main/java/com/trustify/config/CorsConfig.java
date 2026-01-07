@@ -22,6 +22,7 @@ public class CorsConfig {
                 "http://52.66.8.174",
                 "http://localhost:8080",
                 "http://localhost:3001"
+
         ));
 
         corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
