@@ -55,16 +55,21 @@ public class CorsConfig {
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:5174",
-                "http://localhost:8080",
                 "http://localhost:3001"
 
         ));
 
-        corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        //Allow all HTTP methods
+        corsConfig.addAllowedMethod("*");
+
+        // Allow all headers
+        corsConfig.addAllowedHeader("*");
+
+       // corsConfig.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         //corsConfig.setAllowedHeaders(List.of("*"));
         corsConfig.setAllowCredentials(true);
         //corsConfig.setExposedHeaders(List.of("Content-Type","Authorization"));
-        corsConfig.setAllowedHeaders(List.of("Content-Type","Authorization"));
+       // corsConfig.setAllowedHeaders(List.of("Content-Type","Authorization"));
         corsConfig.setExposedHeaders(List.of("Authorization"));
         corsConfig.setMaxAge(3600L);
 
