@@ -55,7 +55,8 @@ public class CorsConfig {
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:5174",
-                "http://52.66.8.174",
+                "http://52.66.8.174:8080",
+                "http://localhost:8080",
                 "http://localhost:8080",
                 "http://localhost:3001"
 
@@ -67,6 +68,7 @@ public class CorsConfig {
         //corsConfig.setExposedHeaders(List.of("Content-Type","Authorization"));
         corsConfig.setAllowedHeaders(List.of("Content-Type","Authorization"));
         corsConfig.setExposedHeaders(List.of("Authorization"));
+        corsConfig.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", corsConfig);
