@@ -35,7 +35,7 @@ public class JwtFilter extends OncePerRequestFilter {
 
 
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            filterChain.doFilter(request, response);
+            response.setStatus(HttpServletResponse.SC_OK);
             return;
         }
 
