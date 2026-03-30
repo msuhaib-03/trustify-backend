@@ -4,8 +4,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.time.Instant;
 
 @Document(collection = "timeline_logs")
 @Data
@@ -27,6 +30,8 @@ public class TimelineLog {
     private String description; // human-readable description of the action
     private String relatedEntityId; // e.g. paymentIntentId, disputeId, etc.
 
+    @CreatedDate
+    private Instant createdAt;
 
     public enum ActionType {
         TRANSACTION_CREATED,
