@@ -9,10 +9,12 @@ import com.stripe.param.*;
 import com.trustify.dto.*;
 import com.trustify.model.Dispute;
 import com.trustify.model.PaymentEvent;
+import com.trustify.model.TimelineLog;
 import com.trustify.model.Transaction;
 import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
+import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +34,7 @@ public class TransactionServiceImpl implements TransactionService {
     private final TransactionRepository transactionRepository;
     private final PaymentEventRepository eventRepository;
     private final DisputeRepository disputeRepository;
+    private final TimelineLogService timelineLogService;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -67,6 +70,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // Timeline Log for manual review
+            timelineLogService.log(
+                    tx.getId(),
+                    req.getBuyerId(),
+                    "SYSTEM",
+                    "Transaction moved to manual review due to risk",
+                    TimelineLog.ActionType.ADMIN_OVERRIDE
+            );
 
             throw new RuntimeException("Transaction placed on manual review");
         }
@@ -113,6 +125,24 @@ public class TransactionServiceImpl implements TransactionService {
                             .build()
             );
 
+
+            // TIMELINELOG SERVICE: log transaction creation and payment initiation
+            timelineLogService.log(
+                    tx.getId(),
+                    req.getBuyerId(),
+                    "SYSTEM",
+                    "Stripe PaymentIntent created",
+                    TimelineLog.ActionType.PAYMENT_INITIATED
+            );
+
+            timelineLogService.log(
+                    tx.getId(),
+                    req.getBuyerId(),
+                    "SYSTEM",
+                    "Transaction created and payment initiated",
+                    TimelineLog.ActionType.TRANSACTION_CREATED
+            );
+
             // ✅ Return wrapper (Transaction + clientSecret)
             return new CreateTransactionResult(
                     tx,
@@ -146,6 +176,14 @@ public class TransactionServiceImpl implements TransactionService {
                 .build()
         );
 
+        // Timeline Log for release request
+        timelineLogService.log(
+                tx.getId(),
+                userId,
+                "SYSTEM",
+                "Buyer requested payment release",
+                TimelineLog.ActionType.PAYMENT_HELD
+        );
         // TODO: enqueue email notification to seller
     }
 
@@ -235,6 +273,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR CAPTURE
+            timelineLogService.log(
+                    tx.getId(),
+                    actorUserId,
+                    "SYSTEM",
+                    "Payment captured and released to seller",
+                    TimelineLog.ActionType.PAYMENT_RELEASED
+            );
+
             return new CaptureResponse(tx.getId(), captured.getId(), chargeId, tx.getStatus().name());
 
         } catch (StripeException e) {
@@ -269,6 +316,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR REFUND
+            timelineLogService.log(
+                    tx.getId(),
+                    "ADMIN",
+                    "ADMIN",
+                    "Refund issued to buyer",
+                    TimelineLog.ActionType.REFUND_ISSUED
+            );
 
         } catch (StripeException e) {
             throw new RuntimeException("Stripe refund failed: " + e.getMessage(), e);
@@ -305,6 +361,15 @@ public class TransactionServiceImpl implements TransactionService {
                 .actor(userId)
                 .createdAt(Instant.now())
                 .build()
+        );
+
+        // TIMELINE LOG FOR DISPUTE OPENED
+        timelineLogService.log(
+                tx.getId(),
+                userId,
+                "SYSTEM",
+                "Buyer opened a dispute",
+                TimelineLog.ActionType.DISPUTE_RAISED
         );
     }
 
@@ -361,6 +426,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR DISPUTE RESOLVED
+            timelineLogService.log(
+                    tx.getId(),
+                    adminUserId,
+                    "ADMIN",
+                    "Admin resolved dispute",
+                    TimelineLog.ActionType.DISPUTE_RESOLVED
+            );
+
         } catch (StripeException e) {
             throw new RuntimeException("Stripe operation failed: " + e.getMessage(), e);
         }
@@ -384,7 +458,19 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR PAYMENT SUCCESS
+            timelineLogService.log(
+                    tx.getId(),
+                    "SYSTEM",
+                    "SYSTEM",
+                    "Payment authorized by Stripe",
+                    TimelineLog.ActionType.PAYMENT_AUTHORIZED
+            );
         });
+
+        // Note: actual capture happens in our manual flow, not automatically on PI success, so we don't change to RELEASED here.
+
     }
 
     @Override
@@ -403,6 +489,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR PAYMENT CANCELLED
+            timelineLogService.log(
+                    tx.getId(),
+                    "SYSTEM",
+                    "SYSTEM",
+                    "Payment cancelled",
+                    TimelineLog.ActionType.TRANSACTION_COMPLETED
+            );
         });
     }
 
@@ -416,6 +511,15 @@ public class TransactionServiceImpl implements TransactionService {
         tx.setRenterPickedUp(true);
         tx.setStatus(Transaction.TransactionStatus.RENTAL_IN_PROGRESS);
         transactionRepository.save(tx);
+
+        // TIMELINE LOG FOR RENTAL STARTED
+        timelineLogService.log(
+                tx.getId(),
+                userEmail,
+                userEmail,
+                "Item picked up by renter",
+                TimelineLog.ActionType.RENTAL_STARTED
+        );
     }
 
     public void completeRental(String transactionId, String userEmail) {
@@ -426,6 +530,15 @@ public class TransactionServiceImpl implements TransactionService {
         tx.setRenterReturned(true);
         tx.setStatus(Transaction.TransactionStatus.RENTAL_RETURNED);
         transactionRepository.save(tx);
+
+        // TIMELINE LOG FOR RENTAL COMPLETED
+        timelineLogService.log(
+                tx.getId(),
+                userEmail,
+                userEmail,
+                "Item returned by renter",
+                TimelineLog.ActionType.RENTAL_RETURNED
+        );
     }
 
     /**
@@ -480,6 +593,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR DAMAGE DEDUCTED
+            timelineLogService.log(
+                    tx.getId(),
+                    "SYSTEM",
+                    "SYSTEM",
+                    "Damage reported and amount deducted",
+                    TimelineLog.ActionType.DAMAGE_REPORTED
+            );
+
         } catch (RuntimeException e) {
             throw e; // bubble up
         }
@@ -513,6 +635,15 @@ public class TransactionServiceImpl implements TransactionService {
                 .actor("SYSTEM")
                 .createdAt(Instant.now())
                 .build()
+        );
+
+        // TIMELINE LOG FOR DEPOSIT REFUNDED
+        timelineLogService.log(
+                tx.getId(),
+                "SYSTEM",
+                "SYSTEM",
+                "Deposit fully refunded, transaction completed",
+                TimelineLog.ActionType.TRANSACTION_COMPLETED
         );
     }
 
