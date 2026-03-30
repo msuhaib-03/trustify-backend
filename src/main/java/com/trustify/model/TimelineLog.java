@@ -25,6 +25,7 @@ public class TimelineLog {
     private String userId;
     private String username;
 
+    private ActorType actorType;
     private ActionType actionType;
 
     private String description; // human-readable description of the action
@@ -32,6 +33,12 @@ public class TimelineLog {
 
     @CreatedDate
     private Instant createdAt;
+
+    public enum ActorType{
+        SYSTEM,
+        USER,
+        ADMIN
+    }
 
     public enum ActionType {
         TRANSACTION_CREATED,

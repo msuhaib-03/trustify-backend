@@ -75,9 +75,10 @@ public class TransactionServiceImpl implements TransactionService {
             timelineLogService.log(
                     tx.getId(),
                     req.getBuyerId(),
-                    "SYSTEM",
+                    null,
                     "Transaction moved to manual review due to risk",
-                    TimelineLog.ActionType.ADMIN_OVERRIDE
+                    TimelineLog.ActionType.ADMIN_OVERRIDE,
+                    TimelineLog.ActorType.SYSTEM
             );
 
             throw new RuntimeException("Transaction placed on manual review");
@@ -129,18 +130,20 @@ public class TransactionServiceImpl implements TransactionService {
             // TIMELINELOG SERVICE: log transaction creation and payment initiation
             timelineLogService.log(
                     tx.getId(),
-                    req.getBuyerId(),
+                    null,
                     "SYSTEM",
                     "Stripe PaymentIntent created",
-                    TimelineLog.ActionType.PAYMENT_INITIATED
+                    TimelineLog.ActionType.PAYMENT_INITIATED,
+                    TimelineLog.ActorType.SYSTEM
             );
 
             timelineLogService.log(
                     tx.getId(),
                     req.getBuyerId(),
-                    "SYSTEM",
+                    null,
                     "Transaction created and payment initiated",
-                    TimelineLog.ActionType.TRANSACTION_CREATED
+                    TimelineLog.ActionType.TRANSACTION_CREATED,
+                    TimelineLog.ActorType.USER
             );
 
             // ✅ Return wrapper (Transaction + clientSecret)
@@ -180,9 +183,10 @@ public class TransactionServiceImpl implements TransactionService {
         timelineLogService.log(
                 tx.getId(),
                 userId,
-                "SYSTEM",
+                null,
                 "Buyer requested payment release",
-                TimelineLog.ActionType.PAYMENT_HELD
+                TimelineLog.ActionType.PAYMENT_HELD,
+                TimelineLog.ActorType.USER
         );
         // TODO: enqueue email notification to seller
     }
@@ -277,9 +281,10 @@ public class TransactionServiceImpl implements TransactionService {
             timelineLogService.log(
                     tx.getId(),
                     actorUserId,
-                    "SYSTEM",
+                    null,
                     "Payment captured and released to seller",
-                    TimelineLog.ActionType.PAYMENT_RELEASED
+                    TimelineLog.ActionType.PAYMENT_RELEASED,
+                    TimelineLog.ActorType.USER
             );
 
             return new CaptureResponse(tx.getId(), captured.getId(), chargeId, tx.getStatus().name());
@@ -323,7 +328,8 @@ public class TransactionServiceImpl implements TransactionService {
                     "ADMIN",
                     "ADMIN",
                     "Refund issued to buyer",
-                    TimelineLog.ActionType.REFUND_ISSUED
+                    TimelineLog.ActionType.REFUND_ISSUED,
+                    TimelineLog.ActorType.ADMIN
             );
 
         } catch (StripeException e) {
@@ -367,9 +373,10 @@ public class TransactionServiceImpl implements TransactionService {
         timelineLogService.log(
                 tx.getId(),
                 userId,
-                "SYSTEM",
+                null,
                 "Buyer opened a dispute",
-                TimelineLog.ActionType.DISPUTE_RAISED
+                TimelineLog.ActionType.DISPUTE_RAISED,
+                TimelineLog.ActorType.USER
         );
     }
 
@@ -430,9 +437,10 @@ public class TransactionServiceImpl implements TransactionService {
             timelineLogService.log(
                     tx.getId(),
                     adminUserId,
-                    "ADMIN",
+                    null,
                     "Admin resolved dispute",
-                    TimelineLog.ActionType.DISPUTE_RESOLVED
+                    TimelineLog.ActionType.DISPUTE_RESOLVED,
+                    TimelineLog.ActorType.ADMIN
             );
 
         } catch (StripeException e) {
@@ -462,10 +470,11 @@ public class TransactionServiceImpl implements TransactionService {
             // TIMELINE LOG FOR PAYMENT SUCCESS
             timelineLogService.log(
                     tx.getId(),
-                    "SYSTEM",
+                    null,
                     "SYSTEM",
                     "Payment authorized by Stripe",
-                    TimelineLog.ActionType.PAYMENT_AUTHORIZED
+                    TimelineLog.ActionType.PAYMENT_AUTHORIZED,
+                    TimelineLog.ActorType.SYSTEM
             );
         });
 
@@ -493,10 +502,11 @@ public class TransactionServiceImpl implements TransactionService {
             // TIMELINE LOG FOR PAYMENT CANCELLED
             timelineLogService.log(
                     tx.getId(),
-                    "SYSTEM",
+                    null,
                     "SYSTEM",
                     "Payment cancelled",
-                    TimelineLog.ActionType.TRANSACTION_COMPLETED
+                    TimelineLog.ActionType.TRANSACTION_COMPLETED,
+                    TimelineLog.ActorType.SYSTEM
             );
         });
     }
@@ -518,7 +528,8 @@ public class TransactionServiceImpl implements TransactionService {
                 userEmail,
                 userEmail,
                 "Item picked up by renter",
-                TimelineLog.ActionType.RENTAL_STARTED
+                TimelineLog.ActionType.RENTAL_STARTED,
+                TimelineLog.ActorType.USER
         );
     }
 
@@ -537,7 +548,9 @@ public class TransactionServiceImpl implements TransactionService {
                 userEmail,
                 userEmail,
                 "Item returned by renter",
-                TimelineLog.ActionType.RENTAL_RETURNED
+                TimelineLog.ActionType.RENTAL_RETURNED,
+                TimelineLog.ActorType.USER
+
         );
     }
 
@@ -596,10 +609,11 @@ public class TransactionServiceImpl implements TransactionService {
             // TIMELINE LOG FOR DAMAGE DEDUCTED
             timelineLogService.log(
                     tx.getId(),
-                    "SYSTEM",
+                    null,
                     "SYSTEM",
                     "Damage reported and amount deducted",
-                    TimelineLog.ActionType.DAMAGE_REPORTED
+                    TimelineLog.ActionType.DAMAGE_REPORTED,
+                    TimelineLog.ActorType.SYSTEM
             );
 
         } catch (RuntimeException e) {
@@ -640,10 +654,11 @@ public class TransactionServiceImpl implements TransactionService {
         // TIMELINE LOG FOR DEPOSIT REFUNDED
         timelineLogService.log(
                 tx.getId(),
-                "SYSTEM",
+                null,
                 "SYSTEM",
                 "Deposit fully refunded, transaction completed",
-                TimelineLog.ActionType.TRANSACTION_COMPLETED
+                TimelineLog.ActionType.TRANSACTION_COMPLETED,
+                TimelineLog.ActorType.SYSTEM
         );
     }
 
