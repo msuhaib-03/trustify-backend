@@ -28,7 +28,9 @@ public class TimelineLogController {
                 .map(log -> TimelineLogDTO.builder()
                 .action(log.getActionType().name())
                 .description(log.getDescription())
-                .username(log.getUsername())
+                .username(
+                        log.getUsername() != null ? log.getUsername() : log.getActorType().name()
+                )
                 .timestamp(log.getCreatedAt())
                 .build()).collect(Collectors.toList());
 
