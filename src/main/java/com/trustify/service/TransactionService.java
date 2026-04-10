@@ -38,4 +38,6 @@ public interface TransactionService {
     void finalizeRefund(String id);
     void deductDamage(String id, Long damageAmountCents);
 
+    // --------- Condition acceptance --------
+    void acceptedConditions(String transactionId, String buyerId);
 }

@@ -18,6 +18,7 @@ import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.pulsar.PulsarProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -621,6 +622,49 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
+    // CONDITION ACCEPTANCE
+    @Override
+    public void acceptedConditions(String transactionId, String buyerId) {
+        Transaction tx = getTransaction(transactionId);
+
+        // only buyer can accept conditions; in a real implementation, you would also check that the conditions being accepted are valid for this transaction
+        if(!tx.getBuyerId().equals(buyerId)){
+            throw new RuntimeException("Only buyer can accept conditions");
+        }
+
+        // Prevent double acceptance
+        if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
+            throw new RuntimeException("Conditions already accepted");
+        }
+
+        // Must be in correct state to accept conditions (e.g. PENDING)
+        if(!tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED)){
+            throw new RuntimeException("Transaction not in a state to accept conditions");
+        }
+
+        tx.setBuyerAcceptedCondition(true);
+        tx.setConditionAcceptedAt(Instant.now());
+        transactionRepository.save(tx);
+
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("CONDITION_ACCEPTED")
+                .actor(buyerId)
+                .createdAt(Instant.now())
+                .build()
+        );
+
+        // Timeline log service
+        timelineLogService.log(
+                tx.getId(),
+                buyerId,
+                null,
+                "Buyer accepted conditions",
+                TimelineLog.ActionType.CONDITION_ACCEPTED,
+                TimelineLog.ActorType.USER
+        );
+    }
+
     /**
      * Finalize refund (no damage) — refund entire deposit to renter.
      */
@@ -661,6 +705,11 @@ public class TransactionServiceImpl implements TransactionService {
                 TimelineLog.ActorType.SYSTEM
         );
     }
+
+    // CONDITION ACCEPTANCE METHOD
+//    public void acceptedCondition(String transactionId, String buyerId){
+//
+//    }
 
 
     // ---------- helper implementations ----------

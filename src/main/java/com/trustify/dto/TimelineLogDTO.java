@@ -1,5 +1,6 @@
 package com.trustify.dto;
 
+import com.trustify.model.TimelineLog;
 import lombok.Builder;
 import lombok.Data;
 
