@@ -199,6 +199,10 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
 
+        if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
+            throw new RuntimeException("Buyer has not accepted conditions yet");
+        }
+
         if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_RELEASE) &&
                 !tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED) &&
                 !tx.getStatus().equals(Transaction.TransactionStatus.PARTIALLY_RELEASED)) {
@@ -516,6 +520,11 @@ public class TransactionServiceImpl implements TransactionService {
 
     public void startRental(String transactionId, String userEmail) {
         Transaction tx = getTransaction(transactionId);
+
+        if (!tx.getBuyerAcceptedCondition()) {
+            throw new RuntimeException("Accept condition first");
+        }
+
         if (!tx.getBuyerId().equals(userEmail)) {
             throw new RuntimeException("Only renter can start rental");
         }
@@ -622,7 +631,7 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
-    // CONDITION ACCEPTANCE
+    //  ======= CONDITION ACCEPTANCE =============
     @Override
     public void acceptedConditions(String transactionId, String buyerId) {
         Transaction tx = getTransaction(transactionId);

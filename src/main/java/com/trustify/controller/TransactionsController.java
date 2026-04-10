@@ -127,6 +127,12 @@ public class TransactionsController {
         return ResponseEntity.ok(Map.of("message", "Deposit refunded"));
     }
 
+    // ===== CONDITION ACCEPTANCE =====
+    @PostMapping("/{id}/accept-conditions")
+            public void acceptConditions(@PathVariable String id, @RequestParam String userId){
+        transactionService.acceptedConditions(id, userId);
+    }
+
 
 }
 
