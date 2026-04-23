@@ -54,4 +54,11 @@ public class User {
         INACTIVE,
         SUSPENDED
     }
+
+    // Rating System + Fraud Score
+    private Integer fraudScore = 0;     // 0 = safe, 100 = dangerous
+    private Double trustRating = 5.0;  // starts perfect
+    private Integer totalTransactions = 0;
+    private Integer successfulTransactions = 0;
+    private Integer disputeCount = 0;
 }
