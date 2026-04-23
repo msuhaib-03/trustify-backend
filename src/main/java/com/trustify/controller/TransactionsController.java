@@ -39,6 +39,7 @@ public class TransactionsController {
 
 
     @PostMapping("/{id}/refund")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> refund(@PathVariable String id, @RequestParam(required = false) Long amountCents) {
         transactionService.refund(id, amountCents);
         return ResponseEntity.ok("Refund initiated");
