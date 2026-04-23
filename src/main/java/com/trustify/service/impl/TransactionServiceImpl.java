@@ -7,13 +7,12 @@ import com.stripe.model.Refund;
 import com.stripe.model.Transfer;
 import com.stripe.param.*;
 import com.trustify.dto.*;
-import com.trustify.model.Dispute;
-import com.trustify.model.PaymentEvent;
-import com.trustify.model.TimelineLog;
-import com.trustify.model.Transaction;
+import com.trustify.model.*;
 import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
+import com.trustify.repository.UserRepository;
+import com.trustify.service.FraudService;
 import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +34,8 @@ public class TransactionServiceImpl implements TransactionService {
     private final PaymentEventRepository eventRepository;
     private final DisputeRepository disputeRepository;
     private final TimelineLogService timelineLogService;
+    private final FraudService fraudService;
+    private final UserRepository userRepository;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -46,8 +47,14 @@ public class TransactionServiceImpl implements TransactionService {
 
         Stripe.apiKey = stripeSecret;
 
+        // FRAUD SCORE + RATING SYSTEM - simple checks based on buyer/seller history and attributes; in a real system.
+        User buyer = userRepository.findById(req.getBuyerId()).orElseThrow();
+        User seller = userRepository.findById(req.getSellerId()).orElseThrow();
+
         // basic anti-fraud checks; replace with your real logic
-        if (isBlacklisted(req.getBuyerId()) || !isSellerVerified(req.getSellerId())) {
+        //if (isBlacklisted(req.getBuyerId()) || !isSellerVerified(req.getSellerId())) --> old logic before current fraud + rating system
+        if(buyer.getFraudScore() > 70 || seller.getFraudScore() > 70)
+        {
             Transaction tx = Transaction.builder()
                     .listingId(req.getListingId())
                     .buyerId(req.getBuyerId())
@@ -203,6 +210,7 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("Transaction locked due to dispute");
         }
 
+
         if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
             throw new RuntimeException("Buyer has not accepted conditions yet");
         }
@@ -274,6 +282,11 @@ public class TransactionServiceImpl implements TransactionService {
                 // Optional: tx.setStripeTransferId(transfer.getId());
                 transactionRepository.save(tx);
             }
+
+
+            // fraud score + rating
+            fraudService.rewardUser(tx.getSellerId());
+            fraudService.rewardUser(tx.getBuyerId());
 
             eventRepository.save(PaymentEvent.builder()
                     .transactionId(tx.getId())
@@ -366,6 +379,9 @@ public class TransactionServiceImpl implements TransactionService {
                 .createdAt(Instant.now())
                 .build();
         disputeRepository.save(dispute);
+
+        // Fraud Score + Rating
+        fraudService.penalizeUser(tx.getSellerId());
 
         // ✅ Update transaction status
         tx.setStatus(Transaction.TransactionStatus.PENDING_DISPUTE);
@@ -474,6 +490,13 @@ public class TransactionServiceImpl implements TransactionService {
             // 3️⃣ Update transaction and save
             tx.setUpdatedAt(Instant.now());
             transactionRepository.save(tx);
+
+            // Fraud score + Rating
+            if(req.getDecision().equals("REFUND_BUYER")){
+                fraudService.penalizeUser(tx.getSellerId());
+            }else if(req.getDecision().equals("RELEASE_SELLER")){
+                fraudService.rewardUser(tx.getSellerId());
+            }
 
             // ADMIN OVERRIDE + DISPUTE
             // ✅ Update dispute (THIS WAS MISSING 🔥)

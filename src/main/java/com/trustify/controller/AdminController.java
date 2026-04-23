@@ -1,6 +1,7 @@
 package com.trustify.controller;
 
 import com.trustify.repository.DisputeRepository;
+import com.trustify.repository.UserRepository;
 import com.trustify.service.AdminService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -18,9 +19,25 @@ public class AdminController {
     @Autowired
     DisputeRepository disputeRepository;
 
+    @Autowired
+    UserRepository userRepository;
+
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
         return ResponseEntity.ok("Welcome to the Admin Dashboard");
+    }
+
+    @GetMapping("/users")
+    public ResponseEntity<?> getAllUsers() {
+        return ResponseEntity.ok(userRepository.findAll());
+    }
+
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<?> getUser(@PathVariable String userId) {
+        return ResponseEntity.ok(
+                userRepository.findById(userId)
+                        .orElseThrow(() -> new RuntimeException("User not found"))
+        );
     }
 
     // 🔥 Replace useless dashboard
@@ -39,6 +56,14 @@ public class AdminController {
         }
 
         return ResponseEntity.ok(disputeRepository.findAll());
+    }
+
+    // Fraud score + Rating
+    @GetMapping("/users/high-risk")
+    public ResponseEntity<?> getHighRiskUsers() {
+        return ResponseEntity.ok(
+                userRepository.findByFraudScoreGreaterThan(70)
+        );
     }
 
     @PostMapping("/suspend-user/{userId}")
