@@ -32,7 +32,7 @@ public class Dispute {
     private Long refundAmountCents;  // optional
     private String status;
 
-    // This ones for Dispute and Admin override
+    // This one is for Dispute and Admin override
     private String decision;
     private Long sellerPayoutCents;
 }

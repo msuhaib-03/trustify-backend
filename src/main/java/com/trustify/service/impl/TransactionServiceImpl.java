@@ -18,7 +18,6 @@ import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.pulsar.PulsarProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -199,6 +198,11 @@ public class TransactionServiceImpl implements TransactionService {
         Transaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
 
+        // dispute + admin override
+        if (tx.getStatus() == Transaction.TransactionStatus.PENDING_DISPUTE) {
+            throw new RuntimeException("Transaction locked due to dispute");
+        }
+
         if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
             throw new RuntimeException("Buyer has not accepted conditions yet");
         }
@@ -232,9 +236,7 @@ public class TransactionServiceImpl implements TransactionService {
 
                     capBuilder.setAmountToCapture(amountToCaptureCents);
                 }
-//                if (amountToCaptureCents != null && amountToCaptureCents > 0 && amountToCaptureCents <= tx.getAuthorizedAmountCents()) {
-//                    capBuilder.setAmountToCapture(amountToCaptureCents);
-//                }
+
                 captured = pi.capture(capBuilder.build());
             } else {
                 if ("requires_confirmation".equals(pi.getStatus())) {
@@ -342,12 +344,17 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
-
+    // ====================================================
     // ---------------- Dispute (Scaffold) ----------------
+    // =====================================================
     @Override
     public void openDispute(String txId, String userId, DisputeRequest req) {
         Transaction tx = getTransaction(txId);
         if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can open dispute");
+        // ADMIN OVERRIDE + DISPUTE
+        if (disputeRepository.findByTransactionId(txId).isPresent()) {
+            throw new RuntimeException("Dispute already exists");
+        }
 
         // ✅ Save dispute to DB
         Dispute dispute = Dispute.builder()
@@ -389,50 +396,99 @@ public class TransactionServiceImpl implements TransactionService {
     public void adminResolveDispute(String transactionId, String adminUserId, ResolveDisputeRequest req) {
         Transaction tx = getTransaction(transactionId);
 
-        // Optional: check admin role if needed
-        // if (!isAdmin(adminUserId)) throw new RuntimeException("Unauthorized");
-
         if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_DISPUTE)) {
             throw new RuntimeException("Transaction not in dispute state");
         }
+
+        Dispute dispute = disputeRepository.findByTransactionId(transactionId)
+                .orElseThrow(() -> new RuntimeException("Dispute not found for transaction"));
 
         Long deductionCents = req.getDeductionCents() != null ? req.getDeductionCents() : 0L;
         Long platformFeeCents = tx.getPlatformFeeCents() != null ? tx.getPlatformFeeCents() : 0L;
 
         try {
-            // 1️⃣ Refund buyer if requested
-            if (req.isRefundBuyer() && tx.getStripeChargeId() != null) {
-                long refundAmount = tx.getAmountCapturedCents() - deductionCents;
-                RefundCreateParams params = RefundCreateParams.builder()
-                        .setCharge(tx.getStripeChargeId())
-                        .setAmount(refundAmount)
-                        .build();
-                Refund refund = Refund.create(params);
-                tx.setStatus(Transaction.TransactionStatus.REFUNDED);
-            }
+            switch(req.getDecision()){
 
-            // 2️⃣ Transfer remaining to seller (minus deduction + platform fees)
-            if (tx.getSellerStripeAccountId() != null && tx.getAmountCapturedCents() > 0) {
-                long amountToTransfer = tx.getAmountCapturedCents() - deductionCents - platformFeeCents;
-                if (amountToTransfer > 0) {
-                    Map<String, Object> transferParams = Map.of(
-                            "amount", amountToTransfer,
-                            "currency", tx.getCurrency(),
-                            "destination", tx.getSellerStripeAccountId()
-                    );
-                    com.stripe.model.Transfer transfer = com.stripe.model.Transfer.create(transferParams);
-                    // Optionally store transfer ID
-                }
+                // 🔴 CASE 1: FULL REFUND TO BUYER
+                case "REFUND_BUYER":
+
+                    if (tx.getStripeChargeId() != null) {
+                        RefundCreateParams params = RefundCreateParams.builder()
+                                .setCharge(tx.getStripeChargeId())
+                                .setAmount(tx.getAmountCapturedCents())
+                                .build();
+                        Refund.create(params);
+                    }
+
+                    tx.setStatus(Transaction.TransactionStatus.REFUNDED);
+                    break;
+
+
+                // 🟢 CASE 2: RELEASE FULL TO SELLER
+                case "RELEASE_SELLER":
+
+                    long fullAmount = tx.getAmountCapturedCents() - platformFeeCents;
+
+                    if (tx.getSellerStripeAccountId() != null && fullAmount > 0) {
+                        Transfer.create(Map.of(
+                                "amount", fullAmount,
+                                "currency", tx.getCurrency(),
+                                "destination", tx.getSellerStripeAccountId()
+                        ));
+                    }
+
+                    tx.setStatus(Transaction.TransactionStatus.COMPLETED);
+                    break;
+
+                // 🟡 CASE 3: PARTIAL SPLIT
+                case "PARTIAL":
+
+                    long refundAmount = tx.getAmountCapturedCents() - deductionCents;
+
+                    // refund buyer
+                    if (refundAmount > 0 && tx.getStripeChargeId() != null) {
+                        Refund.create(RefundCreateParams.builder()
+                                .setCharge(tx.getStripeChargeId())
+                                .setAmount(refundAmount)
+                                .build());
+                    }
+
+                    // pay seller
+                    long sellerAmount = deductionCents - platformFeeCents;
+
+                    if (tx.getSellerStripeAccountId() != null && sellerAmount > 0) {
+                        Transfer.create(Map.of(
+                                "amount", sellerAmount,
+                                "currency", tx.getCurrency(),
+                                "destination", tx.getSellerStripeAccountId()
+                        ));
+                    }
+
+                    tx.setStatus(Transaction.TransactionStatus.PARTIALLY_RELEASED);
+                    break;
+
+                default:
+                    throw (new RuntimeException("Invalid decision"));
             }
 
             // 3️⃣ Update transaction and save
             tx.setUpdatedAt(Instant.now());
             transactionRepository.save(tx);
 
+            // ADMIN OVERRIDE + DISPUTE
+            // ✅ Update dispute (THIS WAS MISSING 🔥)
+            dispute.setStatus("RESOLVED");
+            dispute.setResolvedAt(Instant.now());
+            dispute.setResolvedBy(adminUserId);
+            dispute.setResolutionNote(req.getAdminNote());
+            dispute.setDecision(req.getDecision());
+            dispute.setRefundAmountCents(tx.getAmountCapturedCents());
+            disputeRepository.save(dispute);
+
             // 4️⃣ Log event
             eventRepository.save(PaymentEvent.builder()
                     .transactionId(tx.getId())
-                    .type("DISPUTE_RESOLVED")
+                    .type("DISPUTE_RESOLVED" + req.getDecision())
                     .actor(adminUserId)
                     .createdAt(Instant.now())
                     .build()
@@ -443,7 +499,7 @@ public class TransactionServiceImpl implements TransactionService {
                     tx.getId(),
                     adminUserId,
                     null,
-                    "Admin resolved dispute",
+                    "Admin resolved dispute" + req.getDecision(),
                     TimelineLog.ActionType.DISPUTE_RESOLVED,
                     TimelineLog.ActorType.ADMIN
             );

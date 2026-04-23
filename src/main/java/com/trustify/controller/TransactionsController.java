@@ -129,8 +129,9 @@ public class TransactionsController {
 
     // ===== CONDITION ACCEPTANCE =====
     @PostMapping("/{id}/accept-conditions")
-            public void acceptConditions(@PathVariable String id, @RequestParam String userId){
+    public ResponseEntity<?> acceptConditions(@PathVariable String id, @RequestParam String userId){
         transactionService.acceptedConditions(id, userId);
+        return ResponseEntity.ok(Map.of("message"," Conditions accepted"));
     }
 
 
