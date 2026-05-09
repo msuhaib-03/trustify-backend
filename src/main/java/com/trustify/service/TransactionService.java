@@ -1,11 +1,9 @@
 package com.trustify.service;
 
-import com.stripe.model.PaymentIntent;
 import com.trustify.dto.*;
 import com.trustify.model.Transaction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
 
 
 public interface TransactionService {
@@ -40,4 +38,6 @@ public interface TransactionService {
     void finalizeRefund(String id);
     void deductDamage(String id, Long damageAmountCents);
 
+    // --------- Condition acceptance --------
+    void acceptedConditions(String transactionId, String buyerId);
 }

@@ -78,4 +78,9 @@ public class Transaction {
         COMPLETED, RENT_COMPLETED, RENT_ACTIVE, DELIVERED_AUTO,
         AUTO_CANCELLED,
     }
+
+    // FIELDS FOR CONDITION ACCEPTANCE
+    private Boolean buyerAcceptedCondition = false;
+    private Instant conditionAcceptedAt;
+
 }

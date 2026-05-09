@@ -9,13 +9,16 @@ import com.stripe.param.*;
 import com.trustify.dto.*;
 import com.trustify.model.Dispute;
 import com.trustify.model.PaymentEvent;
+import com.trustify.model.TimelineLog;
 import com.trustify.model.Transaction;
 import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
+import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.pulsar.PulsarProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,6 +35,7 @@ public class TransactionServiceImpl implements TransactionService {
     private final TransactionRepository transactionRepository;
     private final PaymentEventRepository eventRepository;
     private final DisputeRepository disputeRepository;
+    private final TimelineLogService timelineLogService;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -67,6 +71,16 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // Timeline Log for manual review
+            timelineLogService.log(
+                    tx.getId(),
+                    req.getBuyerId(),
+                    null,
+                    "Transaction moved to manual review due to risk",
+                    TimelineLog.ActionType.ADMIN_OVERRIDE,
+                    TimelineLog.ActorType.SYSTEM
+            );
 
             throw new RuntimeException("Transaction placed on manual review");
         }
@@ -113,6 +127,26 @@ public class TransactionServiceImpl implements TransactionService {
                             .build()
             );
 
+
+            // TIMELINELOG SERVICE: log transaction creation and payment initiation
+            timelineLogService.log(
+                    tx.getId(),
+                    null,
+                    "SYSTEM",
+                    "Stripe PaymentIntent created",
+                    TimelineLog.ActionType.PAYMENT_INITIATED,
+                    TimelineLog.ActorType.SYSTEM
+            );
+
+            timelineLogService.log(
+                    tx.getId(),
+                    req.getBuyerId(),
+                    null,
+                    "Transaction created and payment initiated",
+                    TimelineLog.ActionType.TRANSACTION_CREATED,
+                    TimelineLog.ActorType.USER
+            );
+
             // ✅ Return wrapper (Transaction + clientSecret)
             return new CreateTransactionResult(
                     tx,
@@ -146,6 +180,15 @@ public class TransactionServiceImpl implements TransactionService {
                 .build()
         );
 
+        // Timeline Log for release request
+        timelineLogService.log(
+                tx.getId(),
+                userId,
+                null,
+                "Buyer requested payment release",
+                TimelineLog.ActionType.PAYMENT_HELD,
+                TimelineLog.ActorType.USER
+        );
         // TODO: enqueue email notification to seller
     }
 
@@ -155,6 +198,10 @@ public class TransactionServiceImpl implements TransactionService {
         Stripe.apiKey = stripeSecret;
         Transaction tx = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found"));
+
+        if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
+            throw new RuntimeException("Buyer has not accepted conditions yet");
+        }
 
         if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_RELEASE) &&
                 !tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED) &&
@@ -235,6 +282,16 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR CAPTURE
+            timelineLogService.log(
+                    tx.getId(),
+                    actorUserId,
+                    null,
+                    "Payment captured and released to seller",
+                    TimelineLog.ActionType.PAYMENT_RELEASED,
+                    TimelineLog.ActorType.USER
+            );
+
             return new CaptureResponse(tx.getId(), captured.getId(), chargeId, tx.getStatus().name());
 
         } catch (StripeException e) {
@@ -269,6 +326,16 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR REFUND
+            timelineLogService.log(
+                    tx.getId(),
+                    "ADMIN",
+                    "ADMIN",
+                    "Refund issued to buyer",
+                    TimelineLog.ActionType.REFUND_ISSUED,
+                    TimelineLog.ActorType.ADMIN
+            );
 
         } catch (StripeException e) {
             throw new RuntimeException("Stripe refund failed: " + e.getMessage(), e);
@@ -305,6 +372,16 @@ public class TransactionServiceImpl implements TransactionService {
                 .actor(userId)
                 .createdAt(Instant.now())
                 .build()
+        );
+
+        // TIMELINE LOG FOR DISPUTE OPENED
+        timelineLogService.log(
+                tx.getId(),
+                userId,
+                null,
+                "Buyer opened a dispute",
+                TimelineLog.ActionType.DISPUTE_RAISED,
+                TimelineLog.ActorType.USER
         );
     }
 
@@ -361,6 +438,16 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR DISPUTE RESOLVED
+            timelineLogService.log(
+                    tx.getId(),
+                    adminUserId,
+                    null,
+                    "Admin resolved dispute",
+                    TimelineLog.ActionType.DISPUTE_RESOLVED,
+                    TimelineLog.ActorType.ADMIN
+            );
+
         } catch (StripeException e) {
             throw new RuntimeException("Stripe operation failed: " + e.getMessage(), e);
         }
@@ -384,7 +471,20 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR PAYMENT SUCCESS
+            timelineLogService.log(
+                    tx.getId(),
+                    null,
+                    "SYSTEM",
+                    "Payment authorized by Stripe",
+                    TimelineLog.ActionType.PAYMENT_AUTHORIZED,
+                    TimelineLog.ActorType.SYSTEM
+            );
         });
+
+        // Note: actual capture happens in our manual flow, not automatically on PI success, so we don't change to RELEASED here.
+
     }
 
     @Override
@@ -403,6 +503,16 @@ public class TransactionServiceImpl implements TransactionService {
                     .createdAt(Instant.now())
                     .build();
             eventRepository.save(ev);
+
+            // TIMELINE LOG FOR PAYMENT CANCELLED
+            timelineLogService.log(
+                    tx.getId(),
+                    null,
+                    "SYSTEM",
+                    "Payment cancelled",
+                    TimelineLog.ActionType.TRANSACTION_COMPLETED,
+                    TimelineLog.ActorType.SYSTEM
+            );
         });
     }
 
@@ -410,12 +520,27 @@ public class TransactionServiceImpl implements TransactionService {
 
     public void startRental(String transactionId, String userEmail) {
         Transaction tx = getTransaction(transactionId);
+
+        if (!tx.getBuyerAcceptedCondition()) {
+            throw new RuntimeException("Accept condition first");
+        }
+
         if (!tx.getBuyerId().equals(userEmail)) {
             throw new RuntimeException("Only renter can start rental");
         }
         tx.setRenterPickedUp(true);
         tx.setStatus(Transaction.TransactionStatus.RENTAL_IN_PROGRESS);
         transactionRepository.save(tx);
+
+        // TIMELINE LOG FOR RENTAL STARTED
+        timelineLogService.log(
+                tx.getId(),
+                userEmail,
+                userEmail,
+                "Item picked up by renter",
+                TimelineLog.ActionType.RENTAL_STARTED,
+                TimelineLog.ActorType.USER
+        );
     }
 
     public void completeRental(String transactionId, String userEmail) {
@@ -426,6 +551,17 @@ public class TransactionServiceImpl implements TransactionService {
         tx.setRenterReturned(true);
         tx.setStatus(Transaction.TransactionStatus.RENTAL_RETURNED);
         transactionRepository.save(tx);
+
+        // TIMELINE LOG FOR RENTAL COMPLETED
+        timelineLogService.log(
+                tx.getId(),
+                userEmail,
+                userEmail,
+                "Item returned by renter",
+                TimelineLog.ActionType.RENTAL_RETURNED,
+                TimelineLog.ActorType.USER
+
+        );
     }
 
     /**
@@ -480,9 +616,62 @@ public class TransactionServiceImpl implements TransactionService {
                     .build()
             );
 
+            // TIMELINE LOG FOR DAMAGE DEDUCTED
+            timelineLogService.log(
+                    tx.getId(),
+                    null,
+                    "SYSTEM",
+                    "Damage reported and amount deducted",
+                    TimelineLog.ActionType.DAMAGE_REPORTED,
+                    TimelineLog.ActorType.SYSTEM
+            );
+
         } catch (RuntimeException e) {
             throw e; // bubble up
         }
+    }
+
+    //  ======= CONDITION ACCEPTANCE =============
+    @Override
+    public void acceptedConditions(String transactionId, String buyerId) {
+        Transaction tx = getTransaction(transactionId);
+
+        // only buyer can accept conditions; in a real implementation, you would also check that the conditions being accepted are valid for this transaction
+        if(!tx.getBuyerId().equals(buyerId)){
+            throw new RuntimeException("Only buyer can accept conditions");
+        }
+
+        // Prevent double acceptance
+        if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
+            throw new RuntimeException("Conditions already accepted");
+        }
+
+        // Must be in correct state to accept conditions (e.g. PENDING)
+        if(!tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED)){
+            throw new RuntimeException("Transaction not in a state to accept conditions");
+        }
+
+        tx.setBuyerAcceptedCondition(true);
+        tx.setConditionAcceptedAt(Instant.now());
+        transactionRepository.save(tx);
+
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("CONDITION_ACCEPTED")
+                .actor(buyerId)
+                .createdAt(Instant.now())
+                .build()
+        );
+
+        // Timeline log service
+        timelineLogService.log(
+                tx.getId(),
+                buyerId,
+                null,
+                "Buyer accepted conditions",
+                TimelineLog.ActionType.CONDITION_ACCEPTED,
+                TimelineLog.ActorType.USER
+        );
     }
 
     /**
@@ -514,7 +703,22 @@ public class TransactionServiceImpl implements TransactionService {
                 .createdAt(Instant.now())
                 .build()
         );
+
+        // TIMELINE LOG FOR DEPOSIT REFUNDED
+        timelineLogService.log(
+                tx.getId(),
+                null,
+                "SYSTEM",
+                "Deposit fully refunded, transaction completed",
+                TimelineLog.ActionType.TRANSACTION_COMPLETED,
+                TimelineLog.ActorType.SYSTEM
+        );
     }
+
+    // CONDITION ACCEPTANCE METHOD
+//    public void acceptedCondition(String transactionId, String buyerId){
+//
+//    }
 
 
     // ---------- helper implementations ----------
