@@ -794,11 +794,6 @@ public class TransactionServiceImpl implements TransactionService {
         );
     }
 
-    // CONDITION ACCEPTANCE METHOD
-//    public void acceptedCondition(String transactionId, String buyerId){
-//
-//    }
-
 
     // ---------- helper implementations ----------
     @Override
