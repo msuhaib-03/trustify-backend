@@ -39,6 +39,7 @@ public class TransactionsController {
 
 
     @PostMapping("/{id}/refund")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> refund(@PathVariable String id, @RequestParam(required = false) Long amountCents) {
         transactionService.refund(id, amountCents);
         return ResponseEntity.ok("Refund initiated");
@@ -129,8 +130,9 @@ public class TransactionsController {
 
     // ===== CONDITION ACCEPTANCE =====
     @PostMapping("/{id}/accept-conditions")
-            public void acceptConditions(@PathVariable String id, @RequestParam String userId){
+    public ResponseEntity<?> acceptConditions(@PathVariable String id, @RequestParam String userId){
         transactionService.acceptedConditions(id, userId);
+        return ResponseEntity.ok(Map.of("message"," Conditions accepted"));
     }
 
 
