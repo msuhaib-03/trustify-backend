@@ -18,26 +18,27 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @SpringBootApplication
 public class TrustifyApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(TrustifyApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(TrustifyApplication.class, args);
+    }
 
-    public PlatformTransactionManager add(MongoDatabaseFactory dbFactory){
+    public PlatformTransactionManager add(MongoDatabaseFactory dbFactory) {
         return new MongoTransactionManager(dbFactory);
     }
 
     @Bean
-    public RestTemplate restTemplate(){
+    public RestTemplate restTemplate() {
         return new RestTemplate();
     }
 
-    @Configuration
-    public class WebConfig implements WebMvcConfigurer {
-        @Override
-        public void addResourceHandlers(ResourceHandlerRegistry registry) {
-            registry.addResourceHandler("/uploads/**")
-                    .addResourceLocations("file:uploads/");
-        }
-    }
-
 }
+
+    /*  No need for this block because now we are using S3 and not local storage */
+//    @Configuration
+//    public class WebConfig implements WebMvcConfigurer {
+//        @Override
+//        public void addResourceHandlers(ResourceHandlerRegistry registry) {
+//            registry.addResourceHandler("/uploads/**")
+//                    .addResourceLocations("file:uploads/");
+//        }
+//    }
