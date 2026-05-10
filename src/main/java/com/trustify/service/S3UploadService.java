@@ -58,7 +58,7 @@ public class S3UploadService {
 
             return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + fileName;
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new RuntimeException("Failed to upload image to S3", e);
         }
     }
