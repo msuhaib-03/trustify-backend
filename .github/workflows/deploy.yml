@@ -25,5 +25,6 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "
             cd /home/ubuntu/trustify-backend &&
             git pull &&
-            pm2 restart all
+            mvn clean package -DskipTests &&
+            pm2 restart all --update-env
           "
