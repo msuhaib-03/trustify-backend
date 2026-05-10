@@ -111,6 +111,11 @@
             <version>2.33.9</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-vision</artifactId>
+            <version>3.50.0</version>
+        </dependency>
 
 
     </dependencies>
