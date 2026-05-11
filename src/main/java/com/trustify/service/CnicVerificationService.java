@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.swing.text.html.Option;
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -34,24 +35,37 @@ public class CnicVerificationService {
     UserRepository userRepository;
 
 
+
     public CnicVerificationResponse submitVerifiction(String userId, MultipartFile frontImage, MultipartFile backImage){
+        // CHECK IF USER ALREADY HAS VERIFICATION
+        Optional<CnicVerification> existingVerification =
+                cnicVerificationRepository.findByUserId(userId);
+
+        if(existingVerification.isPresent()){
+
+            CnicVerification.VerificationStatus status =
+                    existingVerification.get().getStatus();
+
+            if(status == CnicVerification.VerificationStatus.PENDING ||
+                    status == CnicVerification.VerificationStatus.APPROVED){
+
+                throw new RuntimeException(
+                        "Verification already submitted"
+                );
+            }
+        }
+
+
         String frontUrl = s3UploadService.uploadFile(frontImage);
         String backUrl = s3UploadService.uploadFile(backImage);
         String extractedText = cnicOcrService.extractTextFromImage(frontUrl);
         String extractName = cnicParserService.extractedName(extractedText);
-
         String extractedCnic = cnicParserService.extractedCnicNumber(extractedText);
 
         // NOW CHECKING DUPLICATE CNIC NUMBER IN DATABASE
         Optional<CnicVerification> existingCnic = cnicVerificationRepository.findByExtractedCnicNumber(extractedCnic);
         if(existingCnic.isPresent()){
             throw new RuntimeException("CNIC already used");
-        }
-
-        // PREVENTS SAME USER FROM SUBMITTING MULTIPLE CNIC VERIFICATIONS
-        Optional<CnicVerification> existingUser = cnicVerificationRepository.findByUserId(userId);
-        if(existingUser.isPresent()){
-            throw new RuntimeException("User has already submitted CNIC verification");
         }
 
         CnicVerification verification = CnicVerification.builder()
@@ -64,9 +78,8 @@ public class CnicVerificationService {
                 .submittedAt(LocalDateTime.now())
                 .build();
 
-        cnicVerificationRepository.save(verification);
-
         CnicVerification savedVerification = cnicVerificationRepository.save(verification);
+
         return CnicVerificationResponse.builder()
                 .id(savedVerification.getId())
                 .extractedCnicNumber(extractedCnic)
@@ -81,6 +94,17 @@ public class CnicVerificationService {
     public CnicVerification approveVerification(String id){
         CnicVerification verification = cnicVerificationRepository.findByUserId(id).orElseThrow(() -> new RuntimeException("Verification not found"));
         verification.setStatus(CnicVerification.VerificationStatus.APPROVED);
+
+        // FIND USER AND UPDATE THEIR FRAUD SCORE OR TRUST RATING BASED ON APPROVAL
+        User user = userRepository.findById(verification.getUserId())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        // MARK USER AS VERIFIED IN USER PROFILE
+        user.setVerified(true);
+
+        // OPTIONAL: REWARD USER FOR SUCCESSFUL VERIFICATION
+        user.setTrustRating(Math.max(5.0,user.getTrustRating() + 20)); // Increase trust rating by 20 points for successful verification, max 100.
+
+        userRepository.save(user);
 
         return cnicVerificationRepository.save(verification);
     }
@@ -97,9 +121,19 @@ public class CnicVerificationService {
         User user = userRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return userRepository.findByUserId(user.getId())
+        return cnicVerificationRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new RuntimeException("Verification not found"));
 
+    }
+
+    // ADMIN GETS ALL PENDING VERIFICATIONS
+    public List<CnicVerification> getPendingVerifications(){
+        return cnicVerificationRepository.findByStatus(CnicVerification.VerificationStatus.PENDING);
+    }
+
+    // GET ALL VERIFICATIONS FOR ADMIN
+    public List<CnicVerification> getAllVerifications(){
+        return cnicVerificationRepository.findAll();
     }
 
 }
