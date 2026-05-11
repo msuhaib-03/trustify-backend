@@ -13,6 +13,4 @@ public interface UserRepository extends MongoRepository<User, String> {
 
     Object findByFraudScoreGreaterThan(Integer fraudScoreIsGreaterThan);
 
-    // CNIC Verification
-    Optional<CnicVerification> findByUserId(String userId);
 }
