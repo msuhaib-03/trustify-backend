@@ -4,10 +4,7 @@ import com.trustify.service.CnicVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.security.Principal;
@@ -35,6 +32,12 @@ public class CnicVerificationController {
                         backImage
                 )
         );
+    }
+
+    @GetMapping("/my-status")
+    @PreAuthorize("hasRole('USER')")
+    public ResponseEntity<?> getMyStatus(Principal principal){
+        return ResponseEntity.ok(cnicVerificationService.getMyVerificationStatus(principal));
     }
 
 }
