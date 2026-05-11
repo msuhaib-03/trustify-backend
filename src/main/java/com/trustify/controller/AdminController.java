@@ -3,6 +3,7 @@ package com.trustify.controller;
 import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.service.AdminService;
+import com.trustify.service.CnicVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +22,9 @@ public class AdminController {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    CnicVerificationService cnicVerificationService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
@@ -70,5 +74,16 @@ public class AdminController {
     public ResponseEntity<?> suspendUser(@PathVariable String userId) {
         adminService.suspendUser(userId);
         return ResponseEntity.ok("User" + userId +"User suspended successfully");
+    }
+
+    // Admin APIs for CNIC Verification
+    @PostMapping("/cnic/{id}/approve")
+    public ResponseEntity<?> approveCnic(@PathVariable String id){
+        return ResponseEntity.ok(cnicVerificationService.approveVerification(id));
+    }
+
+    @PostMapping("/cnic/{id}/reject")
+    public ResponseEntity<?> rejectCnic(@PathVariable String id){
+        return ResponseEntity.ok(cnicVerificationService.rejectVerification(id));
     }
 }
