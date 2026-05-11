@@ -1,16 +1,15 @@
 package com.trustify.model;
 
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.time.LocalTime;
+import java.time.LocalDateTime;
 
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
+@Getter
+@Setter
 @Document(collection = "cnic_verifications")
 public class CnicVerification {
 
@@ -29,8 +28,8 @@ public class CnicVerification {
 
     private String adminRemarks; // for admin to provide feedback on rejection or approval
 
-    private LocalTime submittedAt;
-    private LocalTime reviewedAt;
+    private LocalDateTime submittedAt;
+    private LocalDateTime reviewedAt;
 
     public enum VerificationStatus{
         PENDING,
