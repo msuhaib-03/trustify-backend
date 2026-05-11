@@ -76,7 +76,12 @@ public class AdminController {
         return ResponseEntity.ok("User" + userId +"User suspended successfully");
     }
 
-    // Admin APIs for CNIC Verification
+    //  ========== Admin APIs for CNIC Verification ==============
+    @GetMapping("/cnic/pending")
+    public ResponseEntity<?> getPendingVerifications() {
+        return ResponseEntity.ok(cnicVerificationService.getPendingVerifications());
+    }
+
     @PostMapping("/cnic/{id}/approve")
     public ResponseEntity<?> approveCnic(@PathVariable String id){
         return ResponseEntity.ok(cnicVerificationService.approveVerification(id));
@@ -85,5 +90,10 @@ public class AdminController {
     @PostMapping("/cnic/{id}/reject")
     public ResponseEntity<?> rejectCnic(@PathVariable String id){
         return ResponseEntity.ok(cnicVerificationService.rejectVerification(id));
+    }
+
+    @GetMapping("/cnic/all")
+    public ResponseEntity<?> getAllCnics(){
+        return ResponseEntity.ok(cnicVerificationService.getAllVerifications());
     }
 }
