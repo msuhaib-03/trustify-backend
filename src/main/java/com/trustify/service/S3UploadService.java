@@ -59,7 +59,9 @@ public class S3UploadService {
             return "https://" + bucketName + ".s3." + region + ".amazonaws.com/" + fileName;
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to upload image to S3", e);
+           // throw new RuntimeException("Failed to upload image to S3", e);
+            e.printStackTrace();
+            return null;
         }
     }
 

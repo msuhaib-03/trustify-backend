@@ -61,4 +61,11 @@ public class User {
     private Integer totalTransactions = 0;
     private Integer successfulTransactions = 0;
     private Integer disputeCount = 0;
+
+    // For CNIC Verification
+    @Builder.Default
+    private boolean verified = false;  // true if CNIC is verified
+
+    private String cnicVerificationId; // link to CnicVerification document
+
 }

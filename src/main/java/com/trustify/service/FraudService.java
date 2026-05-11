@@ -43,8 +43,13 @@ public class FraudService {
 
         double rating = 5.0;
 
+        if (user.isVerified()){
+            rating += 0.5; // Bonus for verified users
+        }
+
         if(user.getTotalTransactions() > 0){
-            double successRate = (double) success / user.getSuccessfulTransactions();
+          //  double successRate = (double) success / user.getSuccessfulTransactions();
+            double successRate = (double) success / user.getTotalTransactions();
 
             rating = 5.0 * successRate; // Base rating on success rate, with a max of 5.0
 

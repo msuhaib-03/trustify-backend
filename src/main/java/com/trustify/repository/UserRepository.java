@@ -1,5 +1,6 @@
 package com.trustify.repository;
 
+import com.trustify.model.CnicVerification;
 import com.trustify.model.User;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
@@ -11,4 +12,5 @@ public interface UserRepository extends MongoRepository<User, String> {
     Optional<User> findByRole(User.Role role);
 
     Object findByFraudScoreGreaterThan(Integer fraudScoreIsGreaterThan);
+
 }
