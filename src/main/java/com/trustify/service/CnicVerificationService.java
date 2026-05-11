@@ -2,13 +2,16 @@ package com.trustify.service;
 
 import com.trustify.dto.CnicVerificationResponse;
 import com.trustify.model.CnicVerification;
+import com.trustify.model.User;
 import com.trustify.repository.CnicVerificationRepository;
+import com.trustify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.swing.text.html.Option;
+import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -26,6 +29,9 @@ public class CnicVerificationService {
 
     @Autowired
     private CnicParserService cnicParserService;
+
+    @Autowired
+    UserRepository userRepository;
 
 
     public CnicVerificationResponse submitVerifiction(String userId, MultipartFile frontImage, MultipartFile backImage){
@@ -84,6 +90,16 @@ public class CnicVerificationService {
         verification.setStatus(CnicVerification.VerificationStatus.REJECTED);
 
         return cnicVerificationRepository.save(verification);
+    }
+
+    // USER FUNCTION TO CHECK STATUS OF THEIR CNIC VERIFICATION
+    public CnicVerification getMyVerificationStatus(Principal principal){
+        User user = userRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return userRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new RuntimeException("Verification not found"));
+
     }
 
 }
