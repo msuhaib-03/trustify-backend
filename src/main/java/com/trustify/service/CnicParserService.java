@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 public class CnicParserService {
 
     public String extractedCnicNumber(String text){
-        Pattern pattern = Pattern.compile("\\d{5}-\\d{7}-\\d");
+        Pattern pattern = Pattern.compile("\\d{5}[- ]?\\d{7}[- ]?\\d");
 
         Matcher matcher = pattern.matcher(text);
         if (matcher.find()){
