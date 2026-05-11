@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface CnicVerificationRepository extends MongoRepository<CnicVerification, String> {
     Optional<CnicVerification> findByUserId(String userId);
+
+    Optional<CnicVerification> findByExtractedCnicNumber(String cnic);
 }
