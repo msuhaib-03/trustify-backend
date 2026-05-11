@@ -54,7 +54,7 @@ public class SecurityConfig {
                                 "/transactions/**",
                                 "/payments/**",
                                 "/socket.io/**",
-                                "/cnic-verification",
+                                "/cnic-verification/**",
                                 "/oauth/**")
                         .permitAll()
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
