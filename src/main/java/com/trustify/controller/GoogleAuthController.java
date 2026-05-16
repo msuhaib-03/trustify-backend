@@ -63,6 +63,9 @@ public class GoogleAuthController {
                 params.add("redirect_uri", redirect_uri);
             } else {
                 // if you tested via OAuth Playground, use playground redirect
+              //  params.add("redirect_uri", "https://developers.google.com/oauthplayground");
+
+                // fallback to common playground if provided
                 params.add("redirect_uri", "https://developers.google.com/oauthplayground");
             }
 
