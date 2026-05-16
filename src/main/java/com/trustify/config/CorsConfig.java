@@ -19,8 +19,6 @@ public class CorsConfig {
         CorsConfiguration corsConfig = new CorsConfiguration();
         corsConfig.setAllowedOrigins(List.of(
                 "http://localhost:3000",
-                "http://localhost:5173",
-                "http://localhost:5174",
                 "http://localhost:3001",
                 "https://v0-trustify-peach.vercel.app"
         ));
