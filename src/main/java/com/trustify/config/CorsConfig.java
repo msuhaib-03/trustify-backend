@@ -20,7 +20,9 @@ public class CorsConfig {
         corsConfig.setAllowedOrigins(List.of(
                 "http://localhost:3000",
                 "http://localhost:3001",
-                "https://v0-trustify-peach.vercel.app"
+                "https://v0-trustify-peach.vercel.app",
+                "https://trustify-pk.tech",
+                "https://www.trustify-pk.tech"
         ));
 
         //Allow all HTTP methods
