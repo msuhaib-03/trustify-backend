@@ -53,7 +53,6 @@ public class SecurityConfig {
                                 "/stripe/**",
                                 "/transactions/**",
                                 "/payments/**",
-                                "/admin/**",
                                 "/socket.io/**",
                                 "/cnic-verification/**",
                                 "/oauth/**")
@@ -61,7 +60,6 @@ public class SecurityConfig {
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .requestMatchers("/payment/**").authenticated()
-                        //.requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session ->
