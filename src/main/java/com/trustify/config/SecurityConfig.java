@@ -58,7 +58,8 @@ public class SecurityConfig {
                                 "/oauth/**")
                         .permitAll()
                         .requestMatchers("/setup/**").permitAll() // Nobody can access this normally
-                        .requestMatchers("/admin/**").hasRole("ADMIN")
+                        //.requestMatchers("/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/admin/**").hasAuthority("ADMIN") // this is currently in action
                         .requestMatchers("/payment/**").authenticated()
                         .anyRequest().authenticated()
                 )
