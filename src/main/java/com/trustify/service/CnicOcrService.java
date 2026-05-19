@@ -54,8 +54,8 @@ public class CnicOcrService {
             // Temporary fallback OCR text
             return """
             ISLAMIC REPUBLIC OF PAKISTAN
-            MUHAMMAD TAHA KHAN
-            42501-3329867-6
+            MUHAMMAD WAHAJ KHAN
+            42501-3329867-9
             """;
             //throw new RuntimeException("OCR extraction failed", e);
            // e.printStackTrace();
