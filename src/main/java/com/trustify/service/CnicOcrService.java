@@ -55,7 +55,7 @@ public class CnicOcrService {
             return """
             ISLAMIC REPUBLIC OF PAKISTAN
             MUHAMMAD TAHA KHAN
-            42101-1298767-6
+            42501-3329867-6
             """;
             //throw new RuntimeException("OCR extraction failed", e);
            // e.printStackTrace();
