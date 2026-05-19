@@ -3,6 +3,7 @@ package com.trustify.service;
 import com.trustify.model.User;
 import com.trustify.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -25,7 +26,8 @@ public class CustomUserDetailsService implements UserDetailsService {
         return org.springframework.security.core.userdetails.User
                 .withUsername(user.getEmail())
                 .password(user.getPassword())
-                .roles(user.getRole().name()) // important: converts "ADMIN" or "USER" to ROLE_ADMIN or ROLE_USER
+                //.roles(user.getRole().name()) // important: converts "ADMIN" or "USER" to ROLE_ADMIN or ROLE_USER
+                .authorities(new SimpleGrantedAuthority(user.getRole().name()))
                 .build();
     }
 }
