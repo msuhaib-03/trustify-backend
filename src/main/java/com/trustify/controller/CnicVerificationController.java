@@ -18,7 +18,7 @@ public class CnicVerificationController {
      // This controller will handle endpoints related to CNIC verification, such as submitting CNIC details and fetching verification status.
 
     @PostMapping("/submit")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> submitVerification(
             @RequestParam("frontImage") MultipartFile frontImage,
             @RequestParam("backImage") MultipartFile backImage,
@@ -35,7 +35,7 @@ public class CnicVerificationController {
     }
 
     @GetMapping("/my-status")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> getMyStatus(Principal principal){
         return ResponseEntity.ok(cnicVerificationService.getMyVerificationStatus(principal));
     }
