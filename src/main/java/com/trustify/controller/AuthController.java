@@ -63,7 +63,7 @@ public class AuthController {
         userRepository.save(user);
         String token = jwtUtil.generateToken(request.getEmail());
 
-        return ResponseEntity.ok(new AuthResponse(request.getUsername(), request.getEmail(), token));
+        return ResponseEntity.ok(new AuthResponse(request.getUsername(), request.getEmail(), token, user.getRole()));
     }
 
     // ✅ Login
@@ -78,7 +78,7 @@ public class AuthController {
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
             String token = jwtUtil.generateToken(user.getEmail());
-            return ResponseEntity.ok(new AuthResponse(user.getUsername(), user.getEmail(), token));
+            return ResponseEntity.ok(new AuthResponse(user.getUsername(), user.getEmail(), token, user.getRole()));
 
         } catch (BadCredentialsException ex) {
             return ResponseEntity.status(401)
