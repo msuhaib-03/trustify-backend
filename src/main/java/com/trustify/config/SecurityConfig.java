@@ -53,6 +53,7 @@ public class SecurityConfig {
                                 "/stripe/**",
                                 "/transactions/**",
                                 "/payments/**",
+                                "/admin/**",
                                 "/socket.io/**",
                                 "/cnic-verification/**",
                                 "/oauth/**")
