@@ -92,7 +92,7 @@ public class CnicVerificationService {
 
     // ADMIN FUNCTION TO APPROVE OR REJECT CNIC VERIFICATION
     public CnicVerification approveVerification(String id){
-        CnicVerification verification = cnicVerificationRepository.findByUserId(id).orElseThrow(() -> new RuntimeException("Verification not found"));
+        CnicVerification verification = cnicVerificationRepository.findById(id).orElseThrow(() -> new RuntimeException("Verification not found"));
         verification.setStatus(CnicVerification.VerificationStatus.APPROVED);
 
         // FIND USER AND UPDATE THEIR FRAUD SCORE OR TRUST RATING BASED ON APPROVAL
@@ -110,7 +110,7 @@ public class CnicVerificationService {
     }
 
     public CnicVerification rejectVerification(String id){
-        CnicVerification verification = cnicVerificationRepository.findByUserId(id).orElseThrow(() -> new RuntimeException("Verification not found"));
+        CnicVerification verification = cnicVerificationRepository.findById(id).orElseThrow(() -> new RuntimeException("Verification not found"));
         verification.setStatus(CnicVerification.VerificationStatus.REJECTED);
 
         return cnicVerificationRepository.save(verification);
