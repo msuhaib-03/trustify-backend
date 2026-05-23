@@ -52,13 +52,15 @@ public class CnicOcrService {
             e.printStackTrace();
 
             // Temporary fallback OCR text
-            return """
-            ISLAMIC REPUBLIC OF PAKISTAN
-            MUHAMMAD JAWAD
-            42205-3219718-1
-            """;
-            //throw new RuntimeException("OCR extraction failed", e);
-           // e.printStackTrace();
+            // Commenting this out now because card is actiavted for Cloud Vision
+            // This was only for testing
+//            return """
+//            ISLAMIC REPUBLIC OF PAKISTAN
+//            MUHAMMAD JAWAD
+//            42205-3219718-1
+//            """;
+//
+            throw new RuntimeException("OCR extraction failed", e);
         }
         return "";
     }
