@@ -55,7 +55,7 @@ public class CnicOcrService {
             return """
             ISLAMIC REPUBLIC OF PAKISTAN
             MUHAMMAD HASSAN
-            42205-3579817-4
+            42205-3219817-7
             """;
             //throw new RuntimeException("OCR extraction failed", e);
            // e.printStackTrace();
