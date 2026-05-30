@@ -39,7 +39,7 @@ public class TransactionsController {
 
 
     @PostMapping("/{id}/refund")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> refund(@PathVariable String id, @RequestParam(required = false) Long amountCents) {
         transactionService.refund(id, amountCents);
         return ResponseEntity.ok("Refund initiated");
@@ -93,7 +93,7 @@ public class TransactionsController {
 
     // ---------------- Admin Resolve Dispute ----------------
     @PostMapping("/{id}/admin/resolve-dispute")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> resolveDispute(@PathVariable String id,
                                             @RequestBody ResolveDisputeRequest req,
                                             Principal principal) {
@@ -115,14 +115,14 @@ public class TransactionsController {
     }
 
     @PostMapping("/{id}/deduct-damage")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('SELLER')")
+    @PreAuthorize("hasAuthority('ADMIN') or hasRole('SELLER')")
     public ResponseEntity<?> deductDamage(@PathVariable String id, @RequestParam Long damageAmountCents) {
         transactionService.deductDamage(id, damageAmountCents);
         return ResponseEntity.ok(Map.of("message", "Damage processed"));
     }
 
     @PostMapping("/{id}/finalize-refund")
-    @PreAuthorize("hasRole('ADMIN') or hasRole('SELLER')")
+    @PreAuthorize("hasAuthority('ADMIN') or hasRole('SELLER')")
     public ResponseEntity<?> finalizeRefund(@PathVariable String id) {
         transactionService.finalizeRefund(id);
         return ResponseEntity.ok(Map.of("message", "Deposit refunded"));
