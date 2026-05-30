@@ -9,6 +9,9 @@ import java.util.List;
 
 @Data
 public class ListingDTO {
+    // id added for listing from v0
+    private String id;
+
     @NotBlank(message = "Title is required")
     private String title;
 

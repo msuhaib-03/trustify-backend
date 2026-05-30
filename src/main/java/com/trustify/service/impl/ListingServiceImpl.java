@@ -243,6 +243,9 @@ public boolean toggleFavorite(String listingId, Principal principal) {
 
     private ListingDTO mapToDTO(Listing listing, Set<String> userFavorites) {
         ListingDTO dto = new ListingDTO();
+        // dto for id from v0, done from listingDTO too
+        dto.setId(listing.getId());
+
         dto.setTitle(listing.getTitle());
         dto.setDescription(listing.getDescription());
         dto.setPrice(listing.getPrice());
