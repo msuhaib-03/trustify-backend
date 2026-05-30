@@ -34,7 +34,7 @@ public class ListingController {
 
     // Auth required
     @PostMapping("/create")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> createListing(
             @RequestParam("title") String title,
             @RequestParam("description") String description,
@@ -105,7 +105,7 @@ public class ListingController {
     // This endpoint allows users to delete their own listings by id and bearer token has to be provided
     // which means that only that user can delete his own listing and not someone else's
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> deleteListing(@PathVariable String id, Principal principal) {
         try {
             listingService.deleteListing(id, principal);
@@ -118,7 +118,7 @@ public class ListingController {
     // Bearer token authorization will be required to upload images
     // Under Body -> form-data, key as 'file', type as 'file' and value as the image file to be uploaded
     @PostMapping("/upload-image")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> uploadImage(@RequestParam("file") MultipartFile file) {
         try {
             String fileUrl = imageUploadService.saveImage(file);
@@ -174,7 +174,7 @@ public class ListingController {
 
     // auth required
     @GetMapping("/mine")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<List<Listing>> getMyListings(
             Principal principal,
             @RequestParam(defaultValue = "0") int page,
@@ -203,7 +203,7 @@ public class ListingController {
 
     // this requires auth
     @GetMapping("/favorites")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> getUserFavorites(Principal principal) {
         try {
             return ResponseEntity.ok(listingService.getFavoriteListings(principal));
