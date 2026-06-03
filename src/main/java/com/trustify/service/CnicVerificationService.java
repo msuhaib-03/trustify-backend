@@ -96,7 +96,11 @@ public class CnicVerificationService {
         verification.setStatus(CnicVerification.VerificationStatus.APPROVED);
 
         // FIND USER AND UPDATE THEIR FRAUD SCORE OR TRUST RATING BASED ON APPROVAL
-        User user = userRepository.findById(verification.getUserId())
+        // Fallback: old CNIC records stored email as userId before the controller fix.
+        // Try findById (ObjectId) first, then fall back to findByEmail for legacy records.
+        String userId = verification.getUserId();
+        User user = userRepository.findById(userId)
+                .or(() -> userRepository.findByEmail(userId))
                 .orElseThrow(() -> new RuntimeException("User not found"));
         // MARK USER AS VERIFIED IN USER PROFILE
         user.setVerified(true);
@@ -121,7 +125,11 @@ public class CnicVerificationService {
         User user = userRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        // Fallback: old CNIC records stored email as userId before the controller fix.
+        // Try by ObjectId first, then by email for legacy records.
+        String email = principal.getName();
         return cnicVerificationRepository.findByUserId(user.getId())
+                .or(() -> cnicVerificationRepository.findByUserId(email))
                 .orElseThrow(() -> new RuntimeException("Verification not found"));
 
     }

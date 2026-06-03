@@ -9,7 +9,7 @@ public class CreateTransactionRequest {
     private String buyerId;    // email or userId
     private String sellerId;
     private Transaction.TransactionType type;
-    private long amountCents;  // integer cents
-    private long depositCents; // for rent; optional
+    private long amountCents;  // integer cents (required)
+    private Long depositCents; // for rent (nullable -null/0 means no deposit (sales))
     private String currency; // Optional
 }
