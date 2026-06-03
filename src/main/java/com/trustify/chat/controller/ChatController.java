@@ -6,14 +6,18 @@ import com.trustify.chat.model.Chat;
 import com.trustify.chat.model.Message;
 import com.trustify.chat.service.ChatService;
 import com.trustify.chat.util.ChatTokenUtil;
+import com.trustify.model.User;
+import com.trustify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/chats")
@@ -21,6 +25,8 @@ import java.util.Map;
 public class ChatController {
     private final ChatService chatService;
     private final ChatTokenUtil chatTokenUtil;
+    private final UserRepository userRepository;
+
 
     // Create chat (or return existing)
     @PostMapping
@@ -50,11 +56,30 @@ public class ChatController {
         int from = Math.max(0, page * size);
         int to = Math.min(chat.getMessages().size(), from + size);
         var sub = chat.getMessages().subList(from, to);
-        return ResponseEntity.ok(Map.of(
-                "chatId", chat.getId(),
-                "messages", sub,
-                "totalMessages", chat.getMessages().size()
-        ));
+        // Resolve participant names for the chat header
+        Map<String, String> participantNames = new HashMap<>();
+        Set<String> parts = chat.getParticipants();
+        if (parts != null) {
+            for (String participantId : parts) {
+                User u = userRepository.findById(participantId)
+                        .or(() -> userRepository.findByEmail(participantId))
+                        .orElse(null);
+                if (u != null) {
+                    participantNames.put(participantId, u.getUsername() != null ? u.getUsername() : u.getEmail());
+                } else {
+                    participantNames.put(participantId, participantId);
+                }
+            }
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("chatId", chat.getId());
+        result.put("messages", sub);
+        result.put("totalMessages", chat.getMessages().size());
+        result.put("participants", parts);
+        result.put("participantNames", participantNames);
+        return ResponseEntity.ok(result);
+
     }
 
     // Chat list for a user
