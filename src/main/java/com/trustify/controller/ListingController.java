@@ -2,6 +2,7 @@ package com.trustify.controller;
 
 import com.trustify.dto.ListingDTO;
 import com.trustify.model.Listing;
+import com.trustify.repository.UserRepository;
 import com.trustify.service.ImageUploadService;
 import com.trustify.service.ListingService;
 import com.trustify.service.impl.ListingServiceImpl;
@@ -30,7 +31,7 @@ public class ListingController {
     private final ListingService listingService;
     private final ImageUploadService imageUploadService;
     private final ListingServiceImpl listingServiceImpl;
-
+    private final UserRepository userRepository;
 
     // Auth required
     @PostMapping("/create")
@@ -91,6 +92,8 @@ public class ListingController {
         Listing listing = listingService.getListingById(id);
 
         ListingDTO dto = new ListingDTO();
+        dto.setId(listing.getId());
+        dto.setOwnerId(listing.getOwnerId());
         dto.setTitle(listing.getTitle());
         dto.setDescription(listing.getDescription());
         dto.setPrice(listing.getPrice());
@@ -98,6 +101,10 @@ public class ListingController {
         dto.setCategory(listing.getCategory());
         dto.setImageUrls(listingServiceImpl.buildFullImageUrls(listing.getImageUrls(), request));
 
+        // Resolve seller email so the frontend can do an ownership check via email
+        if (listing.getOwnerId() != null) {
+            userRepository.findById(listing.getOwnerId()).ifPresent(u -> dto.setSellerEmail(u.getEmail()));
+        }
         return ResponseEntity.ok(dto);
       //  return ResponseEntity.ok(listingService.getListingById(id));
     }
@@ -188,7 +195,7 @@ public class ListingController {
 
     // this requires auth
     @PostMapping("/{listingId}/favorite")
-    @PreAuthorize("hasRole('USER')")
+    @PreAuthorize("hasAuthority('USER')")
     public ResponseEntity<?> toggleFavorite(
             @PathVariable String listingId,
             Principal principal

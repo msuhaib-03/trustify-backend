@@ -24,7 +24,24 @@ public class Listing {
 
     private String title;
     private String description;
+
+
+    /** Asking price in USD (displayed to users as both USD and PKR equivalent). */
     private double price;
+
+    /**
+     * For RENT listings only — how the price is billed.
+     * Defaults to PER_DAY if not specified.
+     */
+    @Builder.Default
+    private RentalPeriod rentalPeriod = RentalPeriod.PER_DAY;
+
+    /**
+     * For RENT listings only — optional security deposit in USD.
+     * null / 0 means no deposit; the escrow will auto-release on return.
+     */
+    private Double depositAmountUsd;
+
 
     private String ownerId; // Reference to User ID
 
@@ -54,6 +71,12 @@ public class Listing {
         RENTED,
         REMOVED
     }
+
+    public enum RentalPeriod {
+        PER_HOUR,
+        PER_DAY
+    }
+
 
     //private String location;
 

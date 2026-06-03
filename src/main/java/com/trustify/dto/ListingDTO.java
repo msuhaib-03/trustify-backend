@@ -11,6 +11,8 @@ import java.util.List;
 public class ListingDTO {
     // id added for listing from v0
     private String id;
+    private String ownerId;     // seller's user ID — required for transaction creation
+    private String sellerEmail; // seller's email — used for ownership check on the frontend
 
     @NotBlank(message = "Title is required")
     private String title;
