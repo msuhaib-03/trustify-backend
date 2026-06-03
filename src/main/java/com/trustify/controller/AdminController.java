@@ -1,13 +1,27 @@
 package com.trustify.controller;
 
+import com.trustify.model.Listing;
+import com.trustify.model.Transaction;
 import com.trustify.repository.DisputeRepository;
+import com.trustify.repository.ListingRepository;
+import com.trustify.repository.TransactionRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.service.AdminService;
 import com.trustify.service.CnicVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/admin")
@@ -25,6 +39,12 @@ public class AdminController {
 
     @Autowired
     CnicVerificationService cnicVerificationService;
+
+    @Autowired
+    TransactionRepository transactionRepository;
+
+    @Autowired
+    ListingRepository listingRepository;
 
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
@@ -45,21 +65,88 @@ public class AdminController {
     }
 
     // 🔥 Replace useless dashboard
-    @GetMapping("/stats")
-    public ResponseEntity<?> getStats() {
-        return ResponseEntity.ok("Basic stats later"); // optional
-    }
-
     // Fetch disputes for admin
     // Create dispute and refund are in transactions controller with PreAuthorize.
-    @GetMapping("/disputes")
-    public ResponseEntity<?> getDisputes(@RequestParam(required = false) String status) {
+    @GetMapping("/stats")
+    public ResponseEntity<?> getStats() {
+        long totalUsers = userRepository.count();
+        long activeListings = listingRepository.findByStatus(Listing.ListingStatus.ACTIVE).size();
+        long totalTransactions = transactionRepository.count();
+        long pendingDisputes = disputeRepository.findByStatus("OPEN").size();
+        long fraudAlerts = userRepository.findAll().stream()
+                .filter(u -> u.getFraudScore() > 70)
+                .count();
 
-        if (status != null) {
-            return ResponseEntity.ok(disputeRepository.findByStatus(status));
-        }
+        // Monthly revenue: sum amountCapturedCents for "paid out" transactions this month
+        // Use ZoneOffset.UTC so the LocalDateTime→Instant conversion is unambiguous.
+        // Instant.from(LocalDateTime) throws DateTimeException because LocalDateTime has no
+        // zone — this was silently fine when the DB was empty (stream never ran the filter).
+        Instant startOfMonth = LocalDate.now().withDayOfMonth(1).atStartOfDay().toInstant(ZoneOffset.UTC);
+        Set<Transaction.TransactionStatus> paidStatuses = Set.of(
+                Transaction.TransactionStatus.COMPLETED,
+                Transaction.TransactionStatus.RELEASED,
+                Transaction.TransactionStatus.DELIVERED_AUTO,
+                Transaction.TransactionStatus.RENT_COMPLETED,
+                Transaction.TransactionStatus.RENTAL_RETURNED
+        );
+        long monthlyRevenue = transactionRepository.findAll().stream()
+                .filter(t -> t.getStatus() != null && paidStatuses.contains(t.getStatus()))
+                .filter(t -> t.getCreatedAt() != null && !t.getCreatedAt().isBefore(startOfMonth))
+                .mapToLong(t -> t.getAmountCapturedCents() != null ? t.getAmountCapturedCents() : t.getAmountCents())
+                .sum();
 
-        return ResponseEntity.ok(disputeRepository.findAll());
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalUsers", totalUsers);
+        result.put("activeListings", activeListings);
+        result.put("totalTransactions", totalTransactions);
+        result.put("pendingDisputes", pendingDisputes);
+        result.put("monthlyRevenue", monthlyRevenue);
+        result.put("fraudAlerts", fraudAlerts);
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/transactions/stats")
+    public ResponseEntity<?> getTransactionStats() {
+        List<Transaction> all = transactionRepository.findAll();
+
+        long totalVolume = all.stream()
+                .mapToLong(t -> t.getAmountCapturedCents() != null ? t.getAmountCapturedCents() : t.getAmountCents())
+                .sum();
+
+        Set<Transaction.TransactionStatus> pendingStatuses = Set.of(
+                Transaction.TransactionStatus.PENDING,
+                Transaction.TransactionStatus.AUTHORIZED,
+                Transaction.TransactionStatus.HELD,
+                Transaction.TransactionStatus.PENDING_RELEASE
+        );
+        long pendingTransactions = all.stream()
+                .filter(t -> t.getStatus() != null && pendingStatuses.contains(t.getStatus()))
+                .count();
+
+        Set<Transaction.TransactionStatus> completedStatuses = Set.of(
+                Transaction.TransactionStatus.COMPLETED,
+                Transaction.TransactionStatus.RELEASED,
+                Transaction.TransactionStatus.DELIVERED_AUTO,
+                Transaction.TransactionStatus.RENT_COMPLETED,
+                Transaction.TransactionStatus.RENTAL_RETURNED
+        );
+        long completedTransactions = all.stream()
+                .filter(t -> t.getStatus() != null && completedStatuses.contains(t.getStatus()))
+                .count();
+
+        long disputedTransactions = all.stream()
+                .filter(t -> t.getStatus() == Transaction.TransactionStatus.PENDING_DISPUTE)
+                .count();
+        // Also count open disputes from dispute collection
+        long openDisputes = disputeRepository.findByStatus("OPEN").size();
+        long totalDisputed = disputedTransactions + openDisputes;
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("totalVolume", totalVolume);
+        result.put("pendingTransactions", pendingTransactions);
+        result.put("completedTransactions", completedTransactions);
+        result.put("disputedTransactions", totalDisputed);
+        return ResponseEntity.ok(result);
     }
 
     // Fraud score + Rating
@@ -74,6 +161,15 @@ public class AdminController {
     public ResponseEntity<?> suspendUser(@PathVariable String userId) {
         adminService.suspendUser(userId);
         return ResponseEntity.ok("User" + userId +"User suspended successfully");
+    }
+
+    // ========== Admin Transactions View ===========
+    @GetMapping("/transactions")
+    public ResponseEntity<?> getAllTransactions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequest pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return ResponseEntity.ok(transactionRepository.findAll(pageable));
     }
 
     //  ========== Admin APIs for CNIC Verification ==============
