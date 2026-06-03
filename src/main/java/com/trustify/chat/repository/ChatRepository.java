@@ -23,4 +23,16 @@ public interface ChatRepository extends MongoRepository<Chat, String> {
     @Query("{ 'participants': ?0 }")
     Page<Chat> findByParticipant(String userId, Pageable pageable);
 
+    // match either email OR objectId — handles mixed legacy data
+    @Query("{ 'participants': { $in: ?0 } }")
+    Page<Chat> findByParticipantIn(List<String> userIds, Pageable pageable);
+
+    @Query("{ 'participants': { $in: ?0 } }")
+    List<Chat> findByParticipantIn(List<String> userIds);
+
+    // find existing 1-on-1 chat between exactly these two users
+    @Query("{ 'participants': { $all: [?0, ?1] } }")
+    Optional<Chat> findByBothParticipants(String user1, String user2);
+
+
 }
