@@ -76,10 +76,12 @@ public class ListingServiceImpl implements ListingService {
     }
 
     public List<String> buildFullImageUrls(List<String> imagePaths, HttpServletRequest request) {
+        if (imagePaths == null) return new ArrayList<>();
         String baseUrl = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort();
         return imagePaths.stream()
-                .map(path -> baseUrl + path)
-                .toList();
+                .filter(p -> p != null && !p.isBlank())
+                .map(p -> p.startsWith("http") ? p : baseUrl + p)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     @Override
@@ -104,12 +106,6 @@ public class ListingServiceImpl implements ListingService {
         return listingRepository.findByOwnerId(user.getId());
     }
 
-
-//    @Override
-//    public Page<Listing> getAllActiveListings(Pageable pageable) {
-//        return listingRepository.findByStatus(Listing.ListingStatus.ACTIVE, pageable);
-//    }
-
     @Override
     public List<ListingDTO> getAllActiveListings(int page, int size, String sortBy, String sortDir, Principal principal) {
         Sort sort = sortDir.equalsIgnoreCase("asc") ?
@@ -119,9 +115,6 @@ public class ListingServiceImpl implements ListingService {
         Pageable pageable = PageRequest.of(page, size, sort);
         Page<Listing> listingsPage = listingRepository.findByStatus(Listing.ListingStatus.ACTIVE, pageable);
 
-//        User user = userRepository.findByEmail(principal.getName())
-//                .orElseThrow(() -> new RuntimeException("User not found"));
-//        Set<String> userFavorites = user.getFavoriteListingIds();
         Set<String> userFavorites; // empty by default
 
         if (principal != null) {
@@ -151,17 +144,6 @@ public class ListingServiceImpl implements ListingService {
         return listingsPage.getContent();
     }
 
-
-//    @Override
-//    public List<Listing> searchListings(String category, Listing.ListingType type, Double priceMax, int page, int size, String sortBy, String sortDir) {
-//        Sort sort = sortDir.equalsIgnoreCase("asc") ?
-//                Sort.by(sortBy).ascending() :
-//                Sort.by(sortBy).descending();
-//
-//        Pageable pageable = PageRequest.of(page, size, sort);
-//        return (List<Listing>) listingRepository.searchListings(category, type, priceMax, pageable);
-//    }
-
     @Override
     public List<Listing> getListingsByOwner(Principal principal, int page, int size, String sortBy, String sortDir) {
         User user = userRepository.findByEmail(principal.getName())
@@ -174,34 +156,6 @@ public class ListingServiceImpl implements ListingService {
         return pageResult.getContent();
     }
 
-//    @Override
-//    public void toggleFavorite(String listingId, Principal principal) {
-//        User user = userRepository.findByEmail(principal.getName())
-//                .orElseThrow(() -> new RuntimeException("User not found"));
-//
-//        Set<String> favorites = user.getFavoriteListingIds();
-//
-//        if (favorites.contains(listingId)) {
-//            favorites.remove(listingId);
-//        } else {
-//            favorites.add(listingId);
-//        }
-//
-//        userRepository.save(user);
-//    }
-//
-//    @Override
-//    public List<Listing> getUserFavorites(Principal principal) {
-//        User user = userRepository.findByEmail(principal.getName())
-//                .orElseThrow(() -> new RuntimeException("User not found"));
-//
-//        if (user.getFavoriteListingIds().isEmpty()) {
-//            return List.of();
-//        }
-//
-//        return listingRepository.findByIdIn(new ArrayList<>(user.getFavoriteListingIds()));
-//    }
-//
 @Override
 public boolean toggleFavorite(String listingId, Principal principal) {
     User user = userRepository.findByEmail(principal.getName())
