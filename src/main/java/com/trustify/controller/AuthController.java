@@ -4,13 +4,17 @@ import com.trustify.dto.AuthResponse;
 import com.trustify.dto.LoginRequest;
 import com.trustify.dto.SignupRequest;
 import com.trustify.model.BlacklistedToken;
+import com.trustify.model.PasswordResetToken;
 import com.trustify.model.User;
+import com.trustify.repository.PasswordResetTokenRepository;
 import com.trustify.repository.TokenBlacklistRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.security.JwtUtil;
 import com.trustify.service.CustomUserDetailsService;
+import com.trustify.service.EmailService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -19,10 +23,13 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/auth")
@@ -47,6 +54,16 @@ public class AuthController {
     @Autowired
     private JwtUtil jwtUtil;
 
+    @Autowired
+    private EmailService emailService;
+
+    @Autowired
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
+    @Value("${app.frontend.url:http://localhost:3000}")
+    private String frontendUrl;
+
+
     // ✅ Signup
     @PostMapping("/signup")
     public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest request) {
@@ -63,7 +80,7 @@ public class AuthController {
         userRepository.save(user);
         String token = jwtUtil.generateToken(request.getEmail());
 
-        return ResponseEntity.ok(new AuthResponse(request.getUsername(), request.getEmail(), token, user.getRole()));
+        return ResponseEntity.ok(new AuthResponse(user.getId(), request.getUsername(), request.getEmail(), token, user.getRole()));
     }
 
     // ✅ Login
@@ -78,7 +95,7 @@ public class AuthController {
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
             String token = jwtUtil.generateToken(user.getEmail());
-            return ResponseEntity.ok(new AuthResponse(user.getUsername(), user.getEmail(), token, user.getRole()));
+            return ResponseEntity.ok(new AuthResponse(user.getId(), user.getUsername(), user.getEmail(), token, user.getRole()));
 
         } catch (BadCredentialsException ex) {
             return ResponseEntity.status(401)
@@ -138,5 +155,77 @@ public class AuthController {
                 "valid", true,
                 "username", username
         );
+    }
+
+    // ✅ Forgot Password — sends reset link to email
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Email is required"));
+        }
+
+        // Always return 200 to prevent email enumeration attacks
+        String genericMessage = "If that email is registered you'll receive a reset link shortly. Check your spam folder too.";
+
+        userRepository.findByEmail(email.trim().toLowerCase()).ifPresent(user -> {
+            // Remove any existing token for this email
+            passwordResetTokenRepository.deleteByEmail(email.trim().toLowerCase());
+
+            String resetToken = UUID.randomUUID().toString();
+            PasswordResetToken tokenDoc = PasswordResetToken.builder()
+                    .token(resetToken)
+                    .email(email.trim().toLowerCase())
+                    .expiresAt(Instant.now().plus(1, ChronoUnit.HOURS))
+                    .build();
+            passwordResetTokenRepository.save(tokenDoc);
+
+            String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
+            emailService.sendPasswordResetEmail(email.trim().toLowerCase(), resetLink);
+        });
+
+        return ResponseEntity.ok(Map.of("message", genericMessage));
+    }
+
+    // ✅ Reset Password — validates token and updates password
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body) {
+        String token = body.get("token");
+        String newPassword = body.get("newPassword");
+
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Reset token is required"));
+        }
+        if (newPassword == null || newPassword.length() < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Password must be at least 6 characters"));
+        }
+
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
+                .orElse(null);
+
+        if (resetToken == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid or expired reset link. Please request a new one."));
+        }
+
+        if (resetToken.getExpiresAt().isBefore(Instant.now())) {
+            passwordResetTokenRepository.delete(resetToken);
+            return ResponseEntity.badRequest().body(Map.of("error", "This reset link has expired. Please request a new one."));
+        }
+
+        User user = userRepository.findByEmail(resetToken.getEmail())
+                .orElse(null);
+
+        if (user == null) {
+            passwordResetTokenRepository.delete(resetToken);
+            return ResponseEntity.badRequest().body(Map.of("error", "Account not found"));
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Consume the token so it can't be reused
+        passwordResetTokenRepository.delete(resetToken);
+
+        return ResponseEntity.ok(Map.of("message", "Password reset successfully. You can now log in with your new password."));
     }
 }
