@@ -47,9 +47,13 @@ public class TransactionServiceImpl implements TransactionService {
 
         Stripe.apiKey = stripeSecret;
 
-        // FRAUD SCORE + RATING SYSTEM - simple checks based on buyer/seller history and attributes; in a real system.
-        User buyer = userRepository.findById(req.getBuyerId()).orElseThrow();
-        User seller = userRepository.findById(req.getSellerId()).orElseThrow();
+        // buyerId / sellerId can be a MongoDB ObjectId OR an email (see CreateTransactionRequest comment)
+        User buyer = userRepository.findById(req.getBuyerId())
+                .or(() -> userRepository.findByEmail(req.getBuyerId()))
+                .orElseThrow(() -> new RuntimeException("Buyer not found: " + req.getBuyerId()));
+        User seller = userRepository.findById(req.getSellerId())
+                .or(() -> userRepository.findByEmail(req.getSellerId()))
+                .orElseThrow(() -> new RuntimeException("Seller not found: " + req.getSellerId()));
 
         // basic anti-fraud checks; replace with your real logic
         //if (isBlacklisted(req.getBuyerId()) || !isSellerVerified(req.getSellerId())) --> old logic before current fraud + rating system
@@ -59,6 +63,8 @@ public class TransactionServiceImpl implements TransactionService {
                     .listingId(req.getListingId())
                     .buyerId(req.getBuyerId())
                     .sellerId(req.getSellerId())
+                    .buyerEmail(buyer.getEmail())
+                    .sellerEmail(seller.getEmail())
                     .type(req.getType())
                     .amountCents(req.getAmountCents())
                     .depositCents(req.getDepositCents())
@@ -92,10 +98,18 @@ public class TransactionServiceImpl implements TransactionService {
         }
 
         try {
+            // PI = rentalFee + deposit (0 for sales).
+            // By authorizing the total we can later:
+            //   capture(rentalFee)              → Stripe auto-releases deposit back to buyer (no damage)
+            //   capture(rentalFee + damageAmt)  → Stripe auto-releases (deposit - damage) to buyer
+            // This removes the need to issue a separate Stripe refund on an already-captured charge.
+            long depositCents = req.getDepositCents() != null ? req.getDepositCents() : 0L;
+            long totalPiAmount = req.getAmountCents() + depositCents;
+
             // create PaymentIntent with manual capture (escrow)
             PaymentIntentCreateParams params =
                     PaymentIntentCreateParams.builder()
-                            .setAmount(req.getAmountCents())
+                            .setAmount(totalPiAmount)
                             .setCurrency(req.getCurrency() != null ? req.getCurrency() : "usd")
                             .setCaptureMethod(PaymentIntentCreateParams.CaptureMethod.MANUAL)
                             .addPaymentMethodType("card")
@@ -110,13 +124,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .listingId(req.getListingId())
                     .buyerId(req.getBuyerId())
                     .sellerId(req.getSellerId())
+                    .buyerEmail(buyer.getEmail())
+                    .sellerEmail(seller.getEmail())
                     .type(req.getType())
-                    .amountCents(req.getAmountCents())
-                    .depositCents(req.getDepositCents())
+                    .amountCents(req.getAmountCents())      // rental fee only (what seller earns)
+                    .depositCents(req.getDepositCents())    // deposit only (returned to buyer)
                     .currency(pi.getCurrency())
                     .status(Transaction.TransactionStatus.AUTHORIZED)
                     .stripePaymentIntentId(pi.getId())
-                    .authorizedAmountCents(req.getAmountCents())
+                    .authorizedAmountCents(totalPiAmount)   // full PI amount (fee + deposit)
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -163,19 +179,62 @@ public class TransactionServiceImpl implements TransactionService {
         }
     }
 
-    // ---------------- Request Release (Step 1) ----------------
+    // ─── ID-tolerant role helpers ─────────────────────────────────────────────
+    /**
+     * Returns true if {@code userId} (email or ObjectId) resolves to the transaction's buyer.
+     * Handles the case where buyerId may have been stored as email or as ObjectId.
+     */
+    private boolean isTheBuyer(Transaction tx, String userId) {
+        if (userId == null) return false;
+        if (userId.equals(tx.getBuyerId())) return true;
+        if (userId.equals(tx.getBuyerEmail())) return true;
+        try {
+            User u = userRepository.findByEmail(userId)
+                    .or(() -> userRepository.findById(userId))
+                    .orElse(null);
+            if (u != null) {
+                if (u.getId() != null && u.getId().equals(tx.getBuyerId())) return true;
+                if (u.getEmail() != null && u.getEmail().equals(tx.getBuyerId())) return true;
+                if (u.getEmail() != null && u.getEmail().equals(tx.getBuyerEmail())) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    /**
+     * Returns true if {@code userId} (email or ObjectId) resolves to the transaction's seller.
+     */
+    private boolean isTheSeller(Transaction tx, String userId) {
+        if (userId == null) return false;
+        if (userId.equals(tx.getSellerId())) return true;
+        if (userId.equals(tx.getSellerEmail())) return true;
+        try {
+            User u = userRepository.findByEmail(userId)
+                    .or(() -> userRepository.findById(userId))
+                    .orElse(null);
+            if (u != null) {
+                if (u.getId() != null && u.getId().equals(tx.getSellerId())) return true;
+                if (u.getEmail() != null && u.getEmail().equals(tx.getSellerId())) return true;
+                if (u.getEmail() != null && u.getEmail().equals(tx.getSellerEmail())) return true;
+            }
+        } catch (Exception ignored) {}
+        return false;
+    }
+
+    // ---------------- Request Release ----------------
     @Override
     public void requestRelease(String id, String userId, String note) {
         Transaction tx = getTransaction(id);
-        if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can request release");
+        if (!isTheBuyer(tx, userId)) throw new RuntimeException("Only buyer can request release");
         if (!tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED)) {
             throw new RuntimeException("Transaction not in authorized state");
         }
 
-        tx.setStatus(Transaction.TransactionStatus.PENDING_RELEASE);
+        // Record who / when / why
         tx.setReleaseRequestedAt(Instant.now());
         tx.setReleaseRequestedBy(userId);
         tx.setReleaseRequestedNote(note);
+        tx.setStatus(Transaction.TransactionStatus.PENDING_RELEASE);
         transactionRepository.save(tx);
 
         eventRepository.save(PaymentEvent.builder()
@@ -186,7 +245,26 @@ public class TransactionServiceImpl implements TransactionService {
                 .build()
         );
 
-        // Timeline Log for release request
+        // ── SALE: buyer confirming receipt = auto-release to seller ─────────
+        // There is nothing the seller needs to verify at this point — they
+        // already shipped/handed over the item.  Capture immediately so the
+        // seller receives funds without having to take any action.
+        if (tx.getType() == Transaction.TransactionType.SALE) {
+            timelineLogService.log(
+                    tx.getId(),
+                    userId,
+                    null,
+                    "Buyer confirmed receipt — payment auto-released to seller",
+                    TimelineLog.ActionType.PAYMENT_RELEASED,
+                    TimelineLog.ActorType.USER
+            );
+            // capture() re-reads the tx; PENDING_RELEASE is in its allowed-status list.
+            this.capture(id, userId, tx.getAuthorizedAmountCents());
+            return;
+        }
+
+        // ── RENT: stay at PENDING_RELEASE if needed (rare — rentals normally
+        // use completeRental, but kept for completeness / admin override paths)
         timelineLogService.log(
                 tx.getId(),
                 userId,
@@ -195,7 +273,6 @@ public class TransactionServiceImpl implements TransactionService {
                 TimelineLog.ActionType.PAYMENT_HELD,
                 TimelineLog.ActorType.USER
         );
-        // TODO: enqueue email notification to seller
     }
 
     // ---------------- Confirm Release (Step 2) ----------------
@@ -210,14 +287,11 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("Transaction locked due to dispute");
         }
 
-
-        if(Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())){
-            throw new RuntimeException("Buyer has not accepted conditions yet");
-        }
-
         if (!tx.getStatus().equals(Transaction.TransactionStatus.PENDING_RELEASE) &&
                 !tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED) &&
-                !tx.getStatus().equals(Transaction.TransactionStatus.PARTIALLY_RELEASED)) {
+                !tx.getStatus().equals(Transaction.TransactionStatus.PARTIALLY_RELEASED) &&
+                !tx.getStatus().equals(Transaction.TransactionStatus.RENTAL_RETURNED) &&
+                !tx.getStatus().equals(Transaction.TransactionStatus.DAMAGE_RESOLVED)) {
             throw new RuntimeException("Transaction not in releasable state");
         }
 
@@ -363,7 +437,7 @@ public class TransactionServiceImpl implements TransactionService {
     @Override
     public void openDispute(String txId, String userId, DisputeRequest req) {
         Transaction tx = getTransaction(txId);
-        if (!tx.getBuyerId().equals(userId)) throw new RuntimeException("Only buyer can open dispute");
+        if (!isTheBuyer(tx, userId)) throw new RuntimeException("Only buyer can open dispute");
         // ADMIN OVERRIDE + DISPUTE
         if (disputeRepository.findByTransactionId(txId).isPresent()) {
             throw new RuntimeException("Dispute already exists");
@@ -600,11 +674,11 @@ public class TransactionServiceImpl implements TransactionService {
     public void startRental(String transactionId, String userEmail) {
         Transaction tx = getTransaction(transactionId);
 
-        if (!tx.getBuyerAcceptedCondition()) {
+        if (!Boolean.TRUE.equals(tx.getBuyerAcceptedCondition())) {
             throw new RuntimeException("Accept condition first");
         }
 
-        if (!tx.getBuyerId().equals(userEmail)) {
+        if (!isTheBuyer(tx, userEmail)) {
             throw new RuntimeException("Only renter can start rental");
         }
         tx.setRenterPickedUp(true);
@@ -624,14 +698,13 @@ public class TransactionServiceImpl implements TransactionService {
 
     public void completeRental(String transactionId, String userEmail) {
         Transaction tx = getTransaction(transactionId);
-        if (!tx.getBuyerId().equals(userEmail)) {
-            throw new RuntimeException("Only renter can complete rental");
+        if (!isTheBuyer(tx, userEmail) && !isTheSeller(tx, userEmail)) {
+            throw new RuntimeException("Only renter or owner can mark rental complete");
         }
         tx.setRenterReturned(true);
         tx.setStatus(Transaction.TransactionStatus.RENTAL_RETURNED);
         transactionRepository.save(tx);
 
-        // TIMELINE LOG FOR RENTAL COMPLETED
         timelineLogService.log(
                 tx.getId(),
                 userEmail,
@@ -639,75 +712,74 @@ public class TransactionServiceImpl implements TransactionService {
                 "Item returned by renter",
                 TimelineLog.ActionType.RENTAL_RETURNED,
                 TimelineLog.ActorType.USER
-
         );
+
+        // ── No-deposit shortcut ──────────────────────────────────────────────
+        // If there is no security deposit the seller cannot report damage, so
+        // there is nothing for them to do.  Capture the rental fee immediately
+        // and complete the transaction — no seller action required.
+        long deposit = tx.getDepositCents() != null ? tx.getDepositCents() : 0L;
+        if (deposit == 0) {
+            this.finalizeRefund(transactionId, tx.getSellerId());
+        }
+        // If deposit > 0, the status stays RENTAL_RETURNED and the seller's
+        // "No Damage" / "Deduct Damage" buttons will appear on their dashboard.
     }
 
     /**
-     * Deduct damage from the deposit.
+     * Seller reports damage and finalizes the rental.
      *
-     * Strategy:
-     * 1) If the PI still requires_capture, capture `damageAmountCents` using your capture(...) method.
-     * 2) If PI already captured fully, create a Refund for the damage amount (or perform refund logic).
-     * 3) Refund the remainder of the deposit (deposit - damage) to the renter via refund(...).
-     *
-     * Note: We rely on existing capture(...) and refund(...) methods in this class.
+     * Strategy — uses Stripe partial capture so no separate refund call is needed:
+     *   • The PI was authorized for (rentalFee + deposit).
+     *   • We capture (rentalFee + damageAmount) → seller receives both.
+     *   • Stripe automatically cancels the remaining (deposit − damageAmount)
+     *     authorization and returns those funds to the buyer's card.
+     *   • damageAmount must not exceed the deposit.
      */
-    public void deductDamage(String transactionId, Long damageAmountCents) {
+    public void deductDamage(String transactionId, Long damageAmountCents, String userId) {
         Transaction tx = getTransaction(transactionId);
 
-        Long deposit = tx.getDepositCents() != null ? tx.getDepositCents() : 0L;
+        if (!isTheSeller(tx, userId)) {
+            throw new RuntimeException("Only seller can report damage");
+        }
+        if (tx.getStatus() != Transaction.TransactionStatus.RENTAL_RETURNED) {
+            throw new RuntimeException("Transaction is not in RENTAL_RETURNED state");
+        }
+
+        long deposit = tx.getDepositCents() != null ? tx.getDepositCents() : 0L;
         if (damageAmountCents > deposit) {
-            throw new RuntimeException("Damage exceeds deposit");
+            throw new RuntimeException("Damage amount exceeds deposit");
+        }
+        if (damageAmountCents <= 0) {
+            throw new RuntimeException("Damage amount must be positive");
         }
 
-        try {
-            // If PI still requires capture (deposit held but not captured), capture the damage amount
-            if (tx.getStripePaymentIntentId() != null && (tx.getStripeChargeId() == null)) {
-                // capture the damage amount from the AUTHORIZED PI
-                this.capture(transactionId, "SYSTEM", damageAmountCents);
+        // Capture rentalFee + damage → Stripe auto-releases (deposit − damage) to buyer.
+        long captureAmount = tx.getAmountCents() + damageAmountCents;
+        this.capture(transactionId, userId, captureAmount);
 
-                // after capture, tx in DB will have stripeChargeId and amountCapturedCents
-                tx = getTransaction(transactionId); // refresh
-            } else {
-                // If charge already exists and you need to take money from the charge,
-                // you should create a refund of the remaining amount to buyer and/or transfer as needed.
-                // For simplicity: if already captured full amount, create a refund for (deposit - damage)
-                // and leave damage amount for seller (or implement merchant-side logic).
-            }
+        // Override status → rental is now fully complete.
+        tx = getTransaction(transactionId);
+        tx.setStatus(Transaction.TransactionStatus.RENT_COMPLETED);
+        tx.setUpdatedAt(Instant.now());
+        transactionRepository.save(tx);
 
-            // Refund the remainder of deposit (deposit - damage) to buyer
-            Long refundAmount = deposit - damageAmountCents;
-            if (refundAmount > 0) {
-                // refund uses the tx.getStripeChargeId() which should exist after capture above
-                this.refund(transactionId, refundAmount);
-            }
+        eventRepository.save(PaymentEvent.builder()
+                .transactionId(tx.getId())
+                .type("DAMAGE_DEDUCTED")
+                .actor(userId)
+                .createdAt(Instant.now())
+                .build()
+        );
 
-            tx.setStatus(Transaction.TransactionStatus.DAMAGE_RESOLVED);
-            tx.setUpdatedAt(Instant.now());
-            transactionRepository.save(tx);
-
-            eventRepository.save(PaymentEvent.builder()
-                    .transactionId(tx.getId())
-                    .type("DAMAGE_DEDUCTED")
-                    .actor("SYSTEM")
-                    .createdAt(Instant.now())
-                    .build()
-            );
-
-            // TIMELINE LOG FOR DAMAGE DEDUCTED
-            timelineLogService.log(
-                    tx.getId(),
-                    null,
-                    "SYSTEM",
-                    "Damage reported and amount deducted",
-                    TimelineLog.ActionType.DAMAGE_REPORTED,
-                    TimelineLog.ActorType.SYSTEM
-            );
-
-        } catch (RuntimeException e) {
-            throw e; // bubble up
-        }
+        timelineLogService.log(
+                tx.getId(),
+                userId,
+                null,
+                "Damage deducted from deposit; rental fee and damage amount captured",
+                TimelineLog.ActionType.DAMAGE_REPORTED,
+                TimelineLog.ActorType.USER
+        );
     }
 
     //  ======= CONDITION ACCEPTANCE =============
@@ -715,8 +787,8 @@ public class TransactionServiceImpl implements TransactionService {
     public void acceptedConditions(String transactionId, String buyerId) {
         Transaction tx = getTransaction(transactionId);
 
-        // only buyer can accept conditions; in a real implementation, you would also check that the conditions being accepted are valid for this transaction
-        if(!tx.getBuyerId().equals(buyerId)){
+        // only buyer can accept conditions
+        if(!isTheBuyer(tx, buyerId)){
             throw new RuntimeException("Only buyer can accept conditions");
         }
 
@@ -725,7 +797,7 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("Conditions already accepted");
         }
 
-        // Must be in correct state to accept conditions (e.g. PENDING)
+        // Must be in correct state to accept conditions
         if(!tx.getStatus().equals(Transaction.TransactionStatus.AUTHORIZED)){
             throw new RuntimeException("Transaction not in a state to accept conditions");
         }
@@ -754,43 +826,53 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
     /**
-     * Finalize refund (no damage) — refund entire deposit to renter.
+     * Seller finalizes a clean return (no damage).
+     *
+     * Strategy — uses Stripe partial capture so no separate refund call is needed:
+     *   • The PI was authorized for (rentalFee + deposit).
+     *   • We capture only rentalFee → Stripe automatically cancels the deposit
+     *     authorization and returns those funds to the buyer's card.
+     *   • If deposit == 0 this becomes a regular full capture.
      */
-    public void finalizeRefund(String transactionId) {
+    public void finalizeRefund(String transactionId, String userId) {
         Transaction tx = getTransaction(transactionId);
 
-        if (tx.getStripeChargeId() == null) {
-            // If charge is not yet created, try to capture 0 or cancel PI — but usually for deposit refund,
-            // charge must exist. For safety, attempt to capture 0 (noop) or cancel PI if applicable.
-            throw new RuntimeException("Cannot finalize refund: no charge present");
+        if (!isTheSeller(tx, userId)) {
+            throw new RuntimeException("Only seller can finalize the rental");
+        }
+        if (tx.getStatus() != Transaction.TransactionStatus.RENTAL_RETURNED &&
+                tx.getStatus() != Transaction.TransactionStatus.DAMAGE_RESOLVED &&
+                tx.getStatus() != Transaction.TransactionStatus.RENTAL_IN_PROGRESS) {
+            // RENTAL_IN_PROGRESS is allowed so the scheduler can auto-finalize
+            // rentals whose end date passed without the renter clicking "Return".
+            throw new RuntimeException("Transaction is not in a returnable state");
         }
 
-        long deposit = (tx.getDepositCents() == null) ? 0L : tx.getDepositCents();
+        // Capture only the rental fee; Stripe auto-releases the deposit portion.
+        long rentalFee = tx.getAmountCents();
+        this.capture(transactionId, userId, rentalFee);
 
-        if (deposit > 0) {
-            this.refund(transactionId, deposit);
-        }
-
-        tx.setStatus(Transaction.TransactionStatus.COMPLETED);
+        // Override the status set by capture() → mark rental fully complete.
+        tx = getTransaction(transactionId);
+        tx.setStatus(Transaction.TransactionStatus.RENT_COMPLETED);
         tx.setUpdatedAt(Instant.now());
         transactionRepository.save(tx);
 
         eventRepository.save(PaymentEvent.builder()
                 .transactionId(tx.getId())
-                .type("DEPOSIT_REFUNDED")
-                .actor("SYSTEM")
+                .type("RENTAL_FINALIZED")
+                .actor(userId)
                 .createdAt(Instant.now())
                 .build()
         );
 
-        // TIMELINE LOG FOR DEPOSIT REFUNDED
         timelineLogService.log(
                 tx.getId(),
+                userId,
                 null,
-                "SYSTEM",
-                "Deposit fully refunded, transaction completed",
+                "Seller released rental fee; deposit returned to renter",
                 TimelineLog.ActionType.TRANSACTION_COMPLETED,
-                TimelineLog.ActorType.SYSTEM
+                TimelineLog.ActorType.USER
         );
     }
 
@@ -803,8 +885,18 @@ public class TransactionServiceImpl implements TransactionService {
 
     @Override
     public Page<Transaction> listForUser(String userId, Pageable pageable) {
-        // list both buyer and seller transactions
-        return transactionRepository.findAll(pageable);
+        // userId from JWT is always the email.
+        // Old transactions stored email as buyerId/sellerId.
+        // New transactions store the MongoDB ObjectId.
+        // Resolve email → ObjectId and pass BOTH to the query so both sets are visible.
+        String resolvedObjectId = userId; // fallback: same as email
+        try {
+            User user = userRepository.findByEmail(userId).orElse(null);
+            if (user != null) {
+                resolvedObjectId = user.getId();
+            }
+        } catch (Exception ignored) {}
+        return transactionRepository.findByBuyerOrSeller(userId, resolvedObjectId, pageable);
     }
 
     // ---- placeholder anti-fraud / verification methods ----

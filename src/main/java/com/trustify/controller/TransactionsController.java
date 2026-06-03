@@ -3,6 +3,8 @@ package com.trustify.controller;
 import com.stripe.model.PaymentIntent;
 import com.trustify.dto.*;
 import com.trustify.model.Transaction;
+import com.trustify.model.User;
+import com.trustify.repository.UserRepository;
 import com.trustify.service.TransactionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +24,32 @@ public class TransactionsController {
     private String stripeSecret;
 
     private final TransactionService transactionService;
+    private final UserRepository userRepository;
+
+    /**
+     * Resolves the principal's email to their MongoDB ObjectId.
+     * This ensures service methods that compare against stored ObjectIds
+     * always receive a consistent ID format, regardless of whether the
+     * transaction stored buyerId/sellerId as an email or an ObjectId.
+     */
+    private String resolveUserId(Principal principal) {
+        String email = principal.getName();
+        return userRepository.findByEmail(email)
+                .map(User::getId)
+                .orElse(email); // fall back to email if lookup fails
+    }
+
+    // List all transactions where the authenticated user is buyer or seller
+    @GetMapping
+    public ResponseEntity<?> listTransactions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            Principal principal) {
+        org.springframework.data.domain.Pageable pageable =
+                org.springframework.data.domain.PageRequest.of(page, size,
+                        org.springframework.data.domain.Sort.by("createdAt").descending());
+        return ResponseEntity.ok(transactionService.listForUser(principal.getName(), pageable));
+    }
 
     // payment intent creation and authorization
     @PostMapping
@@ -60,8 +88,7 @@ public class TransactionsController {
             @RequestBody(required = false) Map<String, String> body,
             Principal principal) {
 
-        String userId = principal.getName();
-        transactionService.requestRelease(id, userId, body != null ? body.get("note") : null);
+        transactionService.requestRelease(id, resolveUserId(principal), body != null ? body.get("note") : null);
         return ResponseEntity.ok(Map.of("message", "Release requested"));
     }
 
@@ -78,7 +105,7 @@ public class TransactionsController {
             amountToCaptureCents = Long.valueOf(body.get("amountToCaptureCents").toString());
         }
 
-        CaptureResponse resp = transactionService.capture(id, principal.getName(), amountToCaptureCents);
+        CaptureResponse resp = transactionService.capture(id, resolveUserId(principal), amountToCaptureCents);
         return ResponseEntity.ok(resp);
     }
 
@@ -87,7 +114,7 @@ public class TransactionsController {
     public ResponseEntity<?> openDispute(@PathVariable String id,
                                          @RequestBody DisputeRequest disputeRequest,
                                          Principal principal) {
-        transactionService.openDispute(id, principal.getName(), disputeRequest);
+        transactionService.openDispute(id, resolveUserId(principal), disputeRequest);
         return ResponseEntity.ok(Map.of("message", "Dispute opened"));
     }
 
@@ -104,28 +131,33 @@ public class TransactionsController {
     // ----------------- RENTAL SPECIFIC ACTIONS -----------------
     @PostMapping("/{id}/start-rental")
     public ResponseEntity<?> startRental(@PathVariable String id, Principal principal) {
-        transactionService.startRental(id, principal.getName());
+        // resolveUserId converts the JWT email to the user's MongoDB ObjectId.
+        // This ensures isTheBuyer() in the service matches directly (step 1)
+        // without relying on the email→lookup→ObjectId chain, which can fail
+        // for older transactions where buyerEmail was null.
+        transactionService.startRental(id, resolveUserId(principal));
         return ResponseEntity.ok(Map.of("message", "Rental started"));
     }
 
     @PostMapping("/{id}/complete-rental")
     public ResponseEntity<?> completeRental(@PathVariable String id, Principal principal) {
-        transactionService.completeRental(id, principal.getName());
+        transactionService.completeRental(id, resolveUserId(principal));
         return ResponseEntity.ok(Map.of("message", "Rental completed"));
     }
 
     @PostMapping("/{id}/deduct-damage")
-    @PreAuthorize("hasAuthority('ADMIN') or hasRole('SELLER')")
-    public ResponseEntity<?> deductDamage(@PathVariable String id, @RequestParam Long damageAmountCents) {
-        transactionService.deductDamage(id, damageAmountCents);
+    public ResponseEntity<?> deductDamage(
+            @PathVariable String id,
+            @RequestParam Long damageAmountCents,
+            Principal principal) {
+        transactionService.deductDamage(id, damageAmountCents,resolveUserId(principal));
         return ResponseEntity.ok(Map.of("message", "Damage processed"));
     }
 
     @PostMapping("/{id}/finalize-refund")
-    @PreAuthorize("hasAuthority('ADMIN') or hasRole('SELLER')")
-    public ResponseEntity<?> finalizeRefund(@PathVariable String id) {
-        transactionService.finalizeRefund(id);
-        return ResponseEntity.ok(Map.of("message", "Deposit refunded"));
+    public ResponseEntity<?> finalizeRefund(@PathVariable String id, Principal principal) {
+        transactionService.finalizeRefund(id, resolveUserId(principal));
+        return ResponseEntity.ok(Map.of("message", "Rental finalized - Payment released"));
     }
 
     // ===== CONDITION ACCEPTANCE =====

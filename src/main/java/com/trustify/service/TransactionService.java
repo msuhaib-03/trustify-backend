@@ -35,8 +35,16 @@ public interface TransactionService {
     // --------- Rental specific ---------
     void startRental(String transactionId, String userEmail);
     void completeRental(String transactionId, String userEmail);
-    void finalizeRefund(String id);
-    void deductDamage(String id, Long damageAmountCents);
+    /**
+     * Seller finalizes a clean return: captures only the rental fee; Stripe
+     * automatically un-holds the deposit and returns it to the buyer.
+     */
+    void finalizeRefund(String id, String userId);
+    /**
+     * Seller reports damage: captures (rentalFee + damageAmount); Stripe
+     * automatically returns (deposit − damageAmount) to the buyer.
+     */
+    void deductDamage(String id, Long damageAmountCents, String userId);
 
     // --------- Condition acceptance --------
     void acceptedConditions(String transactionId, String buyerId);

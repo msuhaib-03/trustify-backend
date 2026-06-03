@@ -15,6 +15,18 @@ public interface TransactionRepository extends MongoRepository<Transaction, Stri
     List<Transaction> findByBuyerId(String buyerId);
     List<Transaction> findBySellerId(String sellerId);
 
+    // For user-scoped transaction list.
+    // buyerOrSeller covers both email and ObjectId in the same query because
+    // old transactions stored email, new ones store ObjectId.
+    @org.springframework.data.mongodb.repository.Query(
+            "{ $or: [ { 'buyerId': { $in: [?0, ?1] } }, { 'sellerId': { $in: [?0, ?1] } } ] }"
+    )
+    org.springframework.data.domain.Page<Transaction> findByBuyerOrSeller(
+            String email, String objectId,
+            org.springframework.data.domain.Pageable pageable);
+
+
+
     // Auto-cancel if seller never accepted within X hours
     List<Transaction> findAllByStatusAndCreatedAtBefore(String status, LocalDateTime time);
 
@@ -28,6 +40,11 @@ public interface TransactionRepository extends MongoRepository<Transaction, Stri
     // For daily reminders
     @Query("{ 'rentalEnd': { $lte: ?0, $gte: ?1 } }")
     List<Transaction> findAllEndingWithinDays(LocalDate end, LocalDate start);
+
+    // Auto-complete RENTAL_RETURNED transactions whose updatedAt is older than X
+    List<Transaction> findAllByStatusAndUpdatedAtBefore(
+            Transaction.TransactionStatus status, Instant cutoff);
+
 
 
 }
