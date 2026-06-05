@@ -114,6 +114,7 @@ public class TransactionScheduler {
         }
     }
 
+
     // 4️⃣ Auto-complete SALE transactions stuck at PENDING_RELEASE
     // Covers transactions created before the auto-capture fix: buyer confirmed
     // receipt but the old code required a seller click that never came.
@@ -128,6 +129,10 @@ public class TransactionScheduler {
             try {
                 escrowService.capture(tx.getId(), tx.getBuyerId(), tx.getAuthorizedAmountCents());
                 emailService.sendEscrowReleasedEmail(tx.getSellerEmail(), tx.getId());
+                emailService.sendEmail(tx.getBuyerEmail(),
+                        "Delivery Auto-Confirmed — Transaction " + tx.getId(),
+                        "<p>Your delivery for transaction <b>" + tx.getId() + "</b> has been " +
+                                "automatically confirmed and payment has been released to the seller.</p>");
             } catch (Exception e) {
                 System.err.println("[Scheduler] autoCompletePendingReleaseSales failed for " +
                         tx.getId() + ": " + e.getMessage());
@@ -163,22 +168,7 @@ public class TransactionScheduler {
         }
     }
 
-
-
-    // 4️⃣ Daily rental ending reminders
-    @Scheduled(cron = "0 0 9 * * *") // 9 AM daily
-    public void sendDailyReminders() {
-
-        LocalDate today = LocalDate.now();
-        LocalDate tomorrow = today.plusDays(1);
-
-        List<Transaction> soonEnding = txRepo.findAllEndingWithinDays(tomorrow, today);
-
-        for (Transaction tx : soonEnding) {
-            emailService.sendEmail(tx.getBuyerEmail(),
-                    "Rental Ending Soon",
-                    "Your rental ends tomorrow. Please prepare to return the item.");
-        }
-    }
+    // Note: Daily rental ending reminders are handled by ReminderScheduler
+    // (which includes a reminderSent dedup flag to prevent duplicate emails).
 
 }

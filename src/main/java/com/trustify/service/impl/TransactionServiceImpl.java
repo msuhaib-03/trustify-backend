@@ -12,6 +12,7 @@ import com.trustify.repository.DisputeRepository;
 import com.trustify.repository.PaymentEventRepository;
 import com.trustify.repository.TransactionRepository;
 import com.trustify.repository.UserRepository;
+import com.trustify.service.EmailService;
 import com.trustify.service.FraudService;
 import com.trustify.service.TimelineLogService;
 import com.trustify.service.TransactionService;
@@ -36,6 +37,7 @@ public class TransactionServiceImpl implements TransactionService {
     private final TimelineLogService timelineLogService;
     private final FraudService fraudService;
     private final UserRepository userRepository;
+    private final EmailService emailService;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -168,6 +170,45 @@ public class TransactionServiceImpl implements TransactionService {
                     TimelineLog.ActionType.TRANSACTION_CREATED,
                     TimelineLog.ActorType.USER
             );
+
+            // ✅ Notify both parties that the transaction has been created
+            boolean isRental = req.getType() == Transaction.TransactionType.RENT;
+            if (isRental) {
+                emailService.sendEmail(
+                        buyer.getEmail(),
+                        "Rental Confirmed — Transaction " + tx.getId(),
+                        "<h3>Your rental request has been confirmed!</h3>" +
+                                "<p>Transaction ID: <b>" + tx.getId() + "</b></p>" +
+                                "<p>Listing ID: " + tx.getListingId() + "</p>" +
+                                "<p>Your payment is securely held in escrow and will be released once the rental is complete.</p>"
+                );
+                emailService.sendEmail(
+                        seller.getEmail(),
+                        "New Rental Request — Transaction " + tx.getId(),
+                        "<h3>You have a new rental request!</h3>" +
+                                "<p>Transaction ID: <b>" + tx.getId() + "</b></p>" +
+                                "<p>Listing ID: " + tx.getListingId() + "</p>" +
+                                "<p>Please prepare the item for the renter. Payment is held in escrow and will be released once the rental concludes.</p>"
+                );
+            } else {
+                emailService.sendEmail(
+                        buyer.getEmail(),
+                        "Order Placed — Transaction " + tx.getId(),
+                        "<h3>Your order has been placed!</h3>" +
+                                "<p>Transaction ID: <b>" + tx.getId() + "</b></p>" +
+                                "<p>Listing ID: " + tx.getListingId() + "</p>" +
+                                "<p>Your payment is securely held in escrow. It will be released to the seller once you confirm delivery.</p>"
+                );
+                emailService.sendEmail(
+                        seller.getEmail(),
+                        "New Sale Order — Transaction " + tx.getId(),
+                        "<h3>You have a new sale order!</h3>" +
+                                "<p>Transaction ID: <b>" + tx.getId() + "</b></p>" +
+                                "<p>Listing ID: " + tx.getListingId() + "</p>" +
+                                "<p>Please ship the item promptly. Payment is held in escrow and will be released once the buyer confirms delivery.</p>"
+                );
+            }
+
 
             // ✅ Return wrapper (Transaction + clientSecret)
             return new CreateTransactionResult(
