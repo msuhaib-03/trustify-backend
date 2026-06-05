@@ -23,4 +23,8 @@ public interface ChatService {
     List<Chat> getChatsForUser(String userId);
     Chat markMessagesRead(String chatId, String userId);
     List<ChatSummaryDTO> getChatSummaries(String userId, Pageable pageable);
+
+
+    /** Admin only — returns every chat regardless of participant */
+    Page<Chat> getAllChats(Pageable pageable);
 }

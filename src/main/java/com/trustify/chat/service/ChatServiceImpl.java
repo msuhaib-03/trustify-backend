@@ -119,4 +119,9 @@ public class ChatServiceImpl implements ChatService{
         List<String> ids = resolveUserIds(userId);
         return chatRepository.findByParticipantIn(ids);
     }
+
+    @Override
+    public Page<Chat> getAllChats(Pageable pageable) {
+        return chatRepository.findAll(pageable);
+    }
 }
