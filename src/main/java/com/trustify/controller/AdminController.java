@@ -1,5 +1,6 @@
 package com.trustify.controller;
 
+import com.trustify.chat.repository.ChatRepository;
 import com.trustify.model.Listing;
 import com.trustify.model.Transaction;
 import com.trustify.repository.DisputeRepository;
@@ -18,10 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @RestController
 @RequestMapping("/admin")
@@ -45,6 +43,9 @@ public class AdminController {
 
     @Autowired
     ListingRepository listingRepository;
+
+    @Autowired
+    ChatRepository chatRepository;
 
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
@@ -191,5 +192,69 @@ public class AdminController {
     @GetMapping("/cnic/all")
     public ResponseEntity<?> getAllCnics(){
         return ResponseEntity.ok(cnicVerificationService.getAllVerifications());
+    }
+
+
+    // ========== Admin Chat Monitoring ===========
+    /**
+     * Returns a lightweight summary of every chat — avoids full Chat/Message
+     * deserialization which can 500 on malformed legacy documents.
+     */
+    @GetMapping("/chats")
+    public ResponseEntity<?> getAllChats(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        try {
+            // Load all chat IDs + minimal fields via the raw repository.
+            // We build the summary manually so that a single bad document
+            // never brings down the whole response.
+            List<Map<String, Object>> summaries = new ArrayList<>();
+            chatRepository.findAll().forEach(chat -> {
+                try {
+                    Map<String, Object> dto = new HashMap<>();
+                    dto.put("id", chat.getId());
+                    // participants is a Set<String> — safe to add directly
+                    dto.put("participants",
+                            chat.getParticipants() != null ? new ArrayList<>(chat.getParticipants()) : Collections.emptyList());
+                    dto.put("updatedAt", chat.getUpdatedAt() != null ? chat.getUpdatedAt().toString() : null);
+                    int msgCount = chat.getMessages() != null ? chat.getMessages().size() : 0;
+                    dto.put("messageCount", msgCount);
+                    if (msgCount > 0) {
+                        var last = chat.getMessages().get(msgCount - 1);
+                        dto.put("lastMessage", last.getContent());
+                        dto.put("lastMessageAt", last.getTimestamp() != null ? last.getTimestamp().toString() : null);
+                    }
+                    summaries.add(dto);
+                } catch (Exception ignored) {
+                    // skip malformed documents
+                }
+            });
+
+            // Sort by updatedAt desc
+            summaries.sort((a, b) -> {
+                String ta = (String) a.get("updatedAt");
+                String tb = (String) b.get("updatedAt");
+                if (ta == null) return 1;
+                if (tb == null) return -1;
+                return tb.compareTo(ta);
+            });
+
+            // Manual pagination
+            int total = summaries.size();
+            int from = Math.min(page * size, total);
+            int to   = Math.min(from + size, total);
+            List<Map<String, Object>> pageContent = summaries.subList(from, to);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", pageContent);
+            response.put("totalElements", total);
+            response.put("totalPages", size > 0 ? (int) Math.ceil((double) total / size) : 1);
+            response.put("currentPage", page);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Failed to load chats: " + e.getMessage()));
+        }
     }
 }
