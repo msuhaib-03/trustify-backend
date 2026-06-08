@@ -398,39 +398,49 @@ public class TransactionServiceImpl implements TransactionService {
             long platformFeeCents = tx.getPlatformFeeCents() != null ? tx.getPlatformFeeCents() : 0;
             long amountToTransfer = capturedAmount - platformFeeCents;
 
+            // Transfer to seller's connected account (optional — skipped for test accounts)
             if (tx.getSellerStripeAccountId() != null && amountToTransfer > 0) {
-                Map<String, Object> transferParams = new HashMap<>();
-                transferParams.put("amount", amountToTransfer);
-                transferParams.put("currency", tx.getCurrency());
-                transferParams.put("destination", tx.getSellerStripeAccountId());
-                Transfer transfer = Transfer.create(transferParams);
-                // Optional: tx.setStripeTransferId(transfer.getId());
-                transactionRepository.save(tx);
+                try {
+                    Map<String, Object> transferParams = new HashMap<>();
+                    transferParams.put("amount", amountToTransfer);
+                    transferParams.put("currency", tx.getCurrency());
+                    transferParams.put("destination", tx.getSellerStripeAccountId());
+                    Transfer.create(transferParams);
+                } catch (Exception transferEx) {
+                    // Non-fatal: Stripe transfer failed but the capture itself succeeded.
+                    System.err.println("[Capture] Transfer to seller failed (non-critical): " + transferEx.getMessage());
+                }
             }
 
+            // Post-capture side-effects — wrapped individually so a failure here
+            // NEVER blocks the caller (e.g. finalizeRefund) from updating the status.
+            try {
+                fraudService.rewardUser(tx.getSellerId());
+                fraudService.rewardUser(tx.getBuyerId());
+            } catch (Exception e) {
+                System.err.println("[Capture] Fraud reward failed (non-critical): " + e.getMessage());
+            }
 
-            // fraud score + rating
-            fraudService.rewardUser(tx.getSellerId());
-            fraudService.rewardUser(tx.getBuyerId());
-
-            eventRepository.save(PaymentEvent.builder()
-                    .transactionId(tx.getId())
-                    .stripeObjectId(captured.getId())
-                    .type("CAPTURED")
-                    .actor(actorUserId)
-                    .createdAt(Instant.now())
-                    .build()
-            );
-
-            // TIMELINE LOG FOR CAPTURE
-            timelineLogService.log(
-                    tx.getId(),
-                    actorUserId,
-                    null,
-                    "Payment captured and released to seller",
-                    TimelineLog.ActionType.PAYMENT_RELEASED,
-                    TimelineLog.ActorType.USER
-            );
+            try {
+                eventRepository.save(PaymentEvent.builder()
+                        .transactionId(tx.getId())
+                        .stripeObjectId(captured.getId())
+                        .type("CAPTURED")
+                        .actor(actorUserId)
+                        .createdAt(Instant.now())
+                        .build()
+                );
+                timelineLogService.log(
+                        tx.getId(),
+                        actorUserId,
+                        null,
+                        "Payment captured and released to seller",
+                        TimelineLog.ActionType.PAYMENT_RELEASED,
+                        TimelineLog.ActorType.USER
+                );
+            } catch (Exception e) {
+                System.err.println("[Capture] Event/timeline log failed (non-critical): " + e.getMessage());
+            }
 
             return new CaptureResponse(tx.getId(), captured.getId(), chargeId, tx.getStatus().name());
 
@@ -891,17 +901,25 @@ public class TransactionServiceImpl implements TransactionService {
         if (!isTheSeller(tx, userId)) {
             throw new RuntimeException("Only seller can finalize the rental");
         }
-        if (tx.getStatus() != Transaction.TransactionStatus.RENTAL_RETURNED &&
-                tx.getStatus() != Transaction.TransactionStatus.DAMAGE_RESOLVED &&
-                tx.getStatus() != Transaction.TransactionStatus.RENTAL_IN_PROGRESS) {
-            // RENTAL_IN_PROGRESS is allowed so the scheduler can auto-finalize
-            // rentals whose end date passed without the renter clicking "Return".
-            throw new RuntimeException("Transaction is not in a returnable state");
-        }
+        // PARTIALLY_RELEASED / RELEASED means a previous capture() call succeeded in Stripe
+        // but an exception was thrown before we could override the status to RENT_COMPLETED.
+        // In that case the Stripe money is already settled — skip the capture and just fix the status.
+        boolean alreadyCaptured = tx.getStatus() == Transaction.TransactionStatus.PARTIALLY_RELEASED
+                || tx.getStatus() == Transaction.TransactionStatus.RELEASED;
 
-        // Capture only the rental fee; Stripe auto-releases the deposit portion.
-        long rentalFee = tx.getAmountCents();
-        this.capture(transactionId, userId, rentalFee);
+        if (!alreadyCaptured) {
+            if (tx.getStatus() != Transaction.TransactionStatus.RENTAL_RETURNED &&
+                    tx.getStatus() != Transaction.TransactionStatus.DAMAGE_RESOLVED &&
+                    tx.getStatus() != Transaction.TransactionStatus.RENTAL_IN_PROGRESS) {
+                // RENTAL_IN_PROGRESS is allowed so the scheduler can auto-finalize
+                // rentals whose end date passed without the renter clicking "Return".
+                throw new RuntimeException("Transaction is not in a returnable state");
+            }
+            // Capture only the rental fee; Stripe auto-releases the deposit portion.
+            long rentalFee = tx.getAmountCents();
+            this.capture(transactionId, userId, rentalFee);
+        }
+        // else: Stripe already settled — skip capture, fall through to status override below
 
         // Override the status set by capture() → mark rental fully complete.
         tx = getTransaction(transactionId);

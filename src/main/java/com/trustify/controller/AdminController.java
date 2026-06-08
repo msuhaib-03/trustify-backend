@@ -1,13 +1,21 @@
 package com.trustify.controller;
 
+
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
+import com.stripe.model.Refund;
+import com.stripe.param.RefundCreateParams;
 import com.trustify.chat.repository.ChatRepository;
 import com.trustify.model.CategoryDepositConfig;
+import com.trustify.model.Dispute;
 import com.trustify.model.Listing;
 import com.trustify.model.Transaction;
 import com.trustify.repository.*;
 import com.trustify.service.AdminService;
 import com.trustify.service.CnicVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
@@ -47,6 +55,9 @@ public class AdminController {
 
     @Autowired
     CategoryDepositConfigRepository depositConfigRepository;
+
+    @Value("${STRIPE_SECRET_KEY}")
+    private String stripeSecret;
 
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
@@ -506,5 +517,129 @@ public class AdminController {
             depositConfigRepository.save(cfg);
         }
         return ResponseEntity.ok(depositConfigRepository.findAll());
+    }
+
+    /**
+     * Admin resolves a dispute.
+     * Body: { "action": "refund_buyer"|"release_to_seller"|"partial_refund"|"update_status",
+     *         "resolution": "...",
+     *         "refundAmountCents": 500   // only for partial_refund
+     *       }
+     *
+     * Stripe behaviour:
+     *   refund_buyer      — cancel PaymentIntent if still uncaptured; else create full Refund
+     *   release_to_seller — capture the PaymentIntent (full amount)
+     *   partial_refund    — capture full then immediately refund partial
+     *   update_status     — DB/status change only, no Stripe call
+     */
+    @PostMapping("/disputes/{id}/resolve")
+    public ResponseEntity<?> resolveDispute(
+            @PathVariable String id,
+            @RequestBody Map<String, Object> body) {
+
+        Stripe.apiKey = stripeSecret;
+
+        Dispute dispute = disputeRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Dispute not found: " + id));
+
+        String action     = (String) body.getOrDefault("action", "update_status");
+        String resolution = (String) body.getOrDefault("resolution", "");
+        Number refundAmtObj = (Number) body.get("refundAmountCents");
+        long   refundAmountCents = refundAmtObj != null ? refundAmtObj.longValue() : 0L;
+
+        // Fetch associated transaction (may be null if dispute has no transactionId)
+        Transaction tx = null;
+        if (dispute.getTransactionId() != null) {
+            tx = transactionRepository.findById(dispute.getTransactionId()).orElse(null);
+        }
+
+        String stripeResult = "no_stripe_action";
+
+        try {
+            if ("update_status".equals(action)) {
+                // DB-only: just flip dispute to UNDER_REVIEW (caller decides)
+                dispute.setStatus("UNDER_REVIEW");
+
+            } else if ("refund_buyer".equals(action)) {
+                if (tx != null && tx.getStripePaymentIntentId() != null) {
+                    PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
+                    String piStatus = pi.getStatus();
+
+                    if ("requires_capture".equals(piStatus) || "requires_payment_method".equals(piStatus)
+                            || "requires_confirmation".equals(piStatus) || "requires_action".equals(piStatus)) {
+                        // Not yet captured — just cancel it
+                        pi.cancel();
+                        stripeResult = "payment_intent_cancelled";
+                    } else if ("succeeded".equals(piStatus)) {
+                        // Already captured — issue a full refund
+                        Refund.create(RefundCreateParams.builder()
+                                .setPaymentIntent(tx.getStripePaymentIntentId())
+                                .build());
+                        stripeResult = "full_refund_issued";
+                    } else {
+                        stripeResult = "pi_status_" + piStatus + "_no_action_taken";
+                    }
+                }
+                if (tx != null) {
+                    tx.setStatus(Transaction.TransactionStatus.REFUNDED);
+                    tx.setUpdatedAt(Instant.now());
+                    transactionRepository.save(tx);
+                }
+                dispute.setStatus("RESOLVED");
+
+            } else if ("release_to_seller".equals(action)) {
+                if (tx != null && tx.getStripePaymentIntentId() != null) {
+                    PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
+                    if ("requires_capture".equals(pi.getStatus())) {
+                        pi.capture();
+                        stripeResult = "payment_intent_captured";
+                    } else {
+                        stripeResult = "pi_status_" + pi.getStatus() + "_no_capture_needed";
+                    }
+                }
+                if (tx != null) {
+                    tx.setStatus(Transaction.TransactionStatus.RELEASED);
+                    tx.setUpdatedAt(Instant.now());
+                    transactionRepository.save(tx);
+                }
+                dispute.setStatus("RESOLVED");
+
+            } else if ("partial_refund".equals(action)) {
+                if (tx != null && tx.getStripePaymentIntentId() != null && refundAmountCents > 0) {
+                    PaymentIntent pi = PaymentIntent.retrieve(tx.getStripePaymentIntentId());
+                    if ("requires_capture".equals(pi.getStatus())) {
+                        pi.capture();
+                    }
+                    Refund.create(RefundCreateParams.builder()
+                            .setPaymentIntent(tx.getStripePaymentIntentId())
+                            .setAmount(refundAmountCents)
+                            .build());
+                    stripeResult = "partial_refund_of_" + refundAmountCents + "_cents";
+                }
+                if (tx != null) {
+                    tx.setStatus(Transaction.TransactionStatus.REFUNDED);
+                    tx.setUpdatedAt(Instant.now());
+                    transactionRepository.save(tx);
+                }
+                dispute.setStatus("RESOLVED");
+                dispute.setRefundAmountCents(refundAmountCents);
+            }
+        } catch (StripeException e) {
+            return ResponseEntity.status(500)
+                    .body(Map.of("error", "Stripe error: " + e.getMessage(), "stripeCode", e.getCode()));
+        }
+
+        dispute.setResolutionNote(resolution);
+        dispute.setDecision(action);
+        dispute.setResolvedAt(Instant.now());
+        disputeRepository.save(dispute);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Dispute resolved",
+                "disputeId", id,
+                "action", action,
+                "stripeResult", stripeResult,
+                "disputeStatus", dispute.getStatus()
+        ));
     }
 }
