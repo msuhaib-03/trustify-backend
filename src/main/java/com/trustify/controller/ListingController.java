@@ -42,6 +42,8 @@ public class ListingController {
             @RequestParam("price") Double price,
             @RequestParam("type") String type,
             @RequestParam("category") String category,
+            @RequestParam(value = "rentalPeriod", required = false) String rentalPeriod,
+            @RequestParam(value = "declaredValuePkr", required = false) Double declaredValuePkr,
             @RequestParam(value = "images", required = false) List<MultipartFile> images,
             Principal principal
     ){
@@ -61,6 +63,10 @@ public class ListingController {
             dto.setType(Listing.ListingType.valueOf(type.toUpperCase()));
             dto.setCategory(category);
             dto.setImageUrls(imageUrls);
+            dto.setDeclaredValuePkr(declaredValuePkr);
+            if (rentalPeriod != null) {
+                dto.setRentalPeriod(Listing.RentalPeriod.valueOf(rentalPeriod.toUpperCase()));
+            }
 
             return ResponseEntity.ok(listingService.createListing(dto, principal));
 
@@ -100,6 +106,9 @@ public class ListingController {
         dto.setType(listing.getType());
         dto.setCategory(listing.getCategory());
         dto.setImageUrls(listingServiceImpl.buildFullImageUrls(listing.getImageUrls(), request));
+        dto.setDeclaredValuePkr(listing.getDeclaredValuePkr());
+        dto.setDepositAmountUsd(listing.getDepositAmountUsd());
+        dto.setRentalPeriod(listing.getRentalPeriod());
 
         // Resolve seller email so the frontend can do an ownership check via email
         if (listing.getOwnerId() != null) {

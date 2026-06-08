@@ -99,6 +99,16 @@ public class TransactionServiceImpl implements TransactionService {
             throw new RuntimeException("Transaction placed on manual review");
         }
 
+        // Stripe minimum is $0.50 = 50 cents. Validate before calling Stripe.
+        long depositCentsVal = req.getDepositCents() != null ? req.getDepositCents() : 0L;
+        long totalCents = req.getAmountCents() + depositCentsVal;
+        if (totalCents < 50) {
+            throw new RuntimeException(
+                    "Amount too low for payment processing. Minimum is $0.50 USD (~PKR 141). " +
+                            "Please set a higher price for your listing."
+            );
+        }
+
         try {
             // PI = rentalFee + deposit (0 for sales).
             // By authorizing the total we can later:

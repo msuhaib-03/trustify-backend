@@ -32,4 +32,13 @@ public class ListingDTO {
     private List<String> imageUrls;
 
     private boolean isFavorite;
+
+    /** RENT only — item's declared market value in PKR (set by seller). */
+    private Double declaredValuePkr;
+
+    /** RENT only — security deposit in USD, auto-calculated from declaredValuePkr × category %. */
+    private Double depositAmountUsd;
+
+    /** RENT only — how the rental price is billed (PER_DAY / PER_HOUR). */
+    private com.trustify.model.Listing.RentalPeriod rentalPeriod;
 }

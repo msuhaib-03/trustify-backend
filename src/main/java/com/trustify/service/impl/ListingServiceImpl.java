@@ -1,8 +1,10 @@
 package com.trustify.service.impl;
 
 import com.trustify.dto.ListingDTO;
+import com.trustify.model.CategoryDepositConfig;
 import com.trustify.model.Listing;
 import com.trustify.model.User;
+import com.trustify.repository.CategoryDepositConfigRepository;
 import com.trustify.repository.ListingRepository;
 import com.trustify.repository.UserRepository;
 import com.trustify.service.ListingService;
@@ -25,13 +27,26 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ListingServiceImpl implements ListingService {
 
+    private static final double PKR_RATE = 282.0; // 1 USD = 282 PKR (keep in sync with frontend)
     private final ListingRepository listingRepository;
     private final UserRepository userRepository;
+    private final CategoryDepositConfigRepository depositConfigRepository;
 
     @Override
     public Listing createListing(ListingDTO dto, Principal principal) {
         User user = userRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Auto-compute security deposit for RENT listings
+        Double depositAmountUsd = null;
+        if (dto.getType() == Listing.ListingType.RENT && dto.getDeclaredValuePkr() != null && dto.getDeclaredValuePkr() > 0) {
+            int pct = depositConfigRepository.findByCategory(dto.getCategory())
+                    .map(CategoryDepositConfig::getDepositPercentage)
+                    .orElse(defaultDepositPct(dto.getCategory()));
+            depositAmountUsd = (dto.getDeclaredValuePkr() * pct / 100.0) / PKR_RATE;
+            // Round to 2 decimal places
+            depositAmountUsd = Math.round(depositAmountUsd * 100.0) / 100.0;
+        }
 
         Listing listing = Listing.builder()
                 .title(dto.getTitle())
@@ -41,6 +56,9 @@ public class ListingServiceImpl implements ListingService {
                 .category(dto.getCategory())
                 .imageUrls(dto.getImageUrls())
                 .ownerId(user.getId())
+                .declaredValuePkr(dto.getDeclaredValuePkr())
+                .depositAmountUsd(depositAmountUsd)
+                .rentalPeriod(dto.getRentalPeriod() != null ? dto.getRentalPeriod() : Listing.RentalPeriod.PER_DAY)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
@@ -194,12 +212,23 @@ public boolean toggleFavorite(String listingId, Principal principal) {
                 .toList();
     }
 
+    /** Default deposit percentages used when the admin hasn't configured a category yet. */
+    private int defaultDepositPct(String category) {
+        if (category == null) return 50;
+        return switch (category) {
+            case "Electronics" -> 90;
+            case "Furniture"   -> 70;
+            case "Books"       -> 80;
+            case "Sports"      -> 60;
+            case "Fashion"     -> 50;
+            default            -> 50;
+        };
+    }
+
 
     private ListingDTO mapToDTO(Listing listing, Set<String> userFavorites) {
         ListingDTO dto = new ListingDTO();
-        // dto for id from v0, done from listingDTO too
         dto.setId(listing.getId());
-
         dto.setTitle(listing.getTitle());
         dto.setDescription(listing.getDescription());
         dto.setPrice(listing.getPrice());
@@ -207,6 +236,9 @@ public boolean toggleFavorite(String listingId, Principal principal) {
         dto.setCategory(listing.getCategory());
         dto.setImageUrls(listing.getImageUrls());
         dto.setFavorite(userFavorites.contains(listing.getId()));
+        dto.setDeclaredValuePkr(listing.getDeclaredValuePkr());
+        dto.setDepositAmountUsd(listing.getDepositAmountUsd());
+        dto.setRentalPeriod(listing.getRentalPeriod());
         return dto;
     }
 

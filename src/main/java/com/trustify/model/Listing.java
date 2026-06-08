@@ -37,7 +37,14 @@ public class Listing {
     private RentalPeriod rentalPeriod = RentalPeriod.PER_DAY;
 
     /**
-     * For RENT listings only — optional security deposit in USD.
+     * For RENT listings only — the item's declared market value in PKR.
+     * Used together with the category deposit percentage to auto-compute depositAmountUsd.
+     */
+    private Double declaredValuePkr;
+
+    /**
+     * For RENT listings only — security deposit in USD, auto-calculated from
+     * declaredValuePkr × categoryDepositPercentage / 100 / PKR_RATE.
      * null / 0 means no deposit; the escrow will auto-release on return.
      */
     private Double depositAmountUsd;
