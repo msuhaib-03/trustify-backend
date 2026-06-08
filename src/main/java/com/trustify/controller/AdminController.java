@@ -1,12 +1,10 @@
 package com.trustify.controller;
 
 import com.trustify.chat.repository.ChatRepository;
+import com.trustify.model.CategoryDepositConfig;
 import com.trustify.model.Listing;
 import com.trustify.model.Transaction;
-import com.trustify.repository.DisputeRepository;
-import com.trustify.repository.ListingRepository;
-import com.trustify.repository.TransactionRepository;
-import com.trustify.repository.UserRepository;
+import com.trustify.repository.*;
 import com.trustify.service.AdminService;
 import com.trustify.service.CnicVerificationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +44,9 @@ public class AdminController {
 
     @Autowired
     ChatRepository chatRepository;
+
+    @Autowired
+    CategoryDepositConfigRepository depositConfigRepository;
 
     @GetMapping("/dashboard")
     public ResponseEntity<String> dashboard() {
@@ -256,5 +257,254 @@ public class AdminController {
             return ResponseEntity.status(500)
                     .body(Map.of("error", "Failed to load chats: " + e.getMessage()));
         }
+    }
+
+    // ========== Category Deposit Configuration ===========
+
+    private static final List<Map<String, Object>> DEFAULT_CONFIGS = List.of(
+            Map.of("category", "Electronics", "depositPercentage", 90),
+            Map.of("category", "Furniture",   "depositPercentage", 70),
+            Map.of("category", "Books",        "depositPercentage", 80),
+            Map.of("category", "Sports",       "depositPercentage", 60),
+            Map.of("category", "Fashion",      "depositPercentage", 50),
+            Map.of("category", "Other",        "depositPercentage", 50)
+    );
+
+    /**
+     * Returns all category deposit configurations.
+     * Auto-seeds defaults on first call if the collection is empty.
+     */
+    @GetMapping("/deposit-config")
+    public ResponseEntity<?> getDepositConfig() {
+        List<CategoryDepositConfig> configs = depositConfigRepository.findAll();
+        if (configs.isEmpty()) {
+            // Seed defaults
+            DEFAULT_CONFIGS.forEach(d -> depositConfigRepository.save(
+                    CategoryDepositConfig.builder()
+                            .category((String) d.get("category"))
+                            .depositPercentage((int) d.get("depositPercentage"))
+                            .build()
+            ));
+            configs = depositConfigRepository.findAll();
+        }
+        return ResponseEntity.ok(configs);
+    }
+
+    // ========== System Health Metrics ===========
+
+    /**
+     * Returns live system health metrics for the admin dashboard.
+     * - memoryUsagePct : real JVM heap usage
+     * - dbLoadPct      : proxy based on total collection document counts
+     * - fraudRate      : % of clean (non-dispute, non-refunded) transactions
+     * - aiAccuracy     : static mock value (fraud model is simulated)
+     */
+    @GetMapping("/system-health")
+    public ResponseEntity<?> getSystemHealth() {
+        Runtime rt  = Runtime.getRuntime();
+        long used   = rt.totalMemory() - rt.freeMemory();
+        long max    = rt.maxMemory();
+        long memPct = Math.round((double) used / max * 100.0);
+
+        long totalUsers    = userRepository.count();
+        long totalTx       = transactionRepository.count();
+        long totalListings = listingRepository.count();
+        long totalDocs     = totalUsers + totalTx + totalListings;
+        // 500 docs ≈ 100% load (scales nicely for a project-size DB)
+        long dbLoadPct = Math.min(Math.round(totalDocs / 5.0), 100L);
+
+        // Fraud rate = percentage of transactions that did NOT end in dispute/refund
+        long badTx = transactionRepository.findAll().stream()
+                .filter(t -> t.getStatus() == Transaction.TransactionStatus.REFUNDED
+                        || t.getStatus() == Transaction.TransactionStatus.PENDING_DISPUTE
+                        || t.getStatus() == Transaction.TransactionStatus.CANCELLED)
+                .count();
+        double fraudRate = totalTx > 0 ? (1.0 - (double) badTx / totalTx) * 100.0 : 100.0;
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("memoryUsagePct", memPct);
+        result.put("dbLoadPct",      dbLoadPct);
+        result.put("fraudRate",      Math.round(fraudRate * 10.0) / 10.0);
+        result.put("aiAccuracy",     94.2);           // mock model — fixed
+        return ResponseEntity.ok(result);
+    }
+
+    // ========== Monthly Revenue Breakdown ===========
+
+    /**
+     * Returns per-month transaction volume for the last 12 months.
+     * Used to populate the Revenue Overview chart.
+     */
+    @GetMapping("/revenue/monthly")
+    public ResponseEntity<?> getMonthlyRevenue() {
+        List<Transaction> all = transactionRepository.findAll();
+
+        // Only count finalised/paid transactions
+        Set<Transaction.TransactionStatus> paidStatuses = Set.of(
+                Transaction.TransactionStatus.COMPLETED,
+                Transaction.TransactionStatus.RELEASED,
+                Transaction.TransactionStatus.DELIVERED_AUTO,
+                Transaction.TransactionStatus.RENT_COMPLETED,
+                Transaction.TransactionStatus.RENTAL_RETURNED
+        );
+
+        java.time.YearMonth now = java.time.YearMonth.now();
+        // Build ordered map for last 12 months (oldest first)
+        java.util.LinkedHashMap<String, Long> monthMap = new java.util.LinkedHashMap<>();
+        for (int i = 11; i >= 0; i--) {
+            java.time.YearMonth ym = now.minusMonths(i);
+            monthMap.put(ym.getMonth().getDisplayName(
+                    java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH), 0L);
+        }
+
+        all.stream()
+                .filter(t -> t.getStatus() != null && paidStatuses.contains(t.getStatus()))
+                .filter(t -> t.getCreatedAt() != null)
+                .forEach(t -> {
+                    java.time.YearMonth txYm = java.time.YearMonth.from(
+                            t.getCreatedAt().atZone(ZoneOffset.UTC));
+                    // Only within our 12-month window
+                    if (!txYm.isBefore(now.minusMonths(11)) && !txYm.isAfter(now)) {
+                        String key = txYm.getMonth().getDisplayName(
+                                java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH);
+                        long amt = t.getAmountCapturedCents() != null
+                                ? t.getAmountCapturedCents() : t.getAmountCents();
+                        monthMap.merge(key, amt, Long::sum);
+                    }
+                });
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        monthMap.forEach((month, total) -> {
+            Map<String, Object> point = new HashMap<>();
+            point.put("name",  month);
+            point.put("value", total);
+            result.add(point);
+        });
+        return ResponseEntity.ok(result);
+    }
+
+    // ========== Recent Activity Feed ===========
+
+    /**
+     * Returns the latest 10 platform events assembled from transactions and disputes.
+     * Sorted newest-first.
+     */
+    @GetMapping("/activity/recent")
+    public ResponseEntity<?> getRecentActivity(
+            @RequestParam(defaultValue = "10") int limit) {
+
+        List<Map<String, Object>> events = new ArrayList<>();
+
+        // Transactions → convert to activity events
+        transactionRepository.findAll().forEach(t -> {
+            try {
+                String action; String type;
+                if (t.getStatus() == Transaction.TransactionStatus.PENDING_DISPUTE) {
+                    action = "Dispute opened on transaction"; type = "DISPUTE";
+                } else if (t.getStatus() == Transaction.TransactionStatus.REFUNDED) {
+                    action = "Payment refunded to buyer"; type = "TRANSACTION";
+                } else if (t.getStatus() == Transaction.TransactionStatus.COMPLETED
+                        || t.getStatus() == Transaction.TransactionStatus.RELEASED
+                        || t.getStatus() == Transaction.TransactionStatus.RENT_COMPLETED) {
+                    action = "Payment completed"; type = "TRANSACTION";
+                } else if (t.getStatus() == Transaction.TransactionStatus.AUTHORIZED
+                        || t.getStatus() == Transaction.TransactionStatus.HELD) {
+                    action = "Payment initiated — funds in escrow"; type = "TRANSACTION";
+                } else {
+                    action = "Transaction " + t.getStatus(); type = "TRANSACTION";
+                }
+                Map<String, Object> e = new HashMap<>();
+                e.put("type",      type);
+                e.put("action",    action);
+                e.put("user",      t.getBuyerEmail() != null ? t.getBuyerEmail() : t.getBuyerId());
+                e.put("createdAt", t.getCreatedAt() != null ? t.getCreatedAt().toString() : "");
+                events.add(e);
+            } catch (Exception ignored) {}
+        });
+
+        // Disputes → separate entries
+        disputeRepository.findAll().forEach(d -> {
+            try {
+                Map<String, Object> e = new HashMap<>();
+                e.put("type",      "DISPUTE");
+                e.put("action",    "Dispute " + (d.getStatus() != null ? d.getStatus().toLowerCase() : "opened"));
+                e.put("user",      d.getOpenedBy() != null ? d.getOpenedBy() : "unknown");
+                e.put("createdAt", d.getCreatedAt() != null ? d.getCreatedAt().toString() : "");
+                events.add(e);
+            } catch (Exception ignored) {}
+        });
+
+        // High-risk users → fraud alerts in activity
+        userRepository.findAll().stream().filter(u -> u.getFraudScore() > 70).forEach(u -> {
+            try {
+                Map<String, Object> e = new HashMap<>();
+                e.put("type",      "FRAUD");
+                e.put("action",    "High-risk user flagged (score " + u.getFraudScore() + ")");
+                e.put("user",      u.getEmail());
+                e.put("createdAt", Instant.now().minus(1, java.time.temporal.ChronoUnit.HOURS).toString());
+                events.add(e);
+            } catch (Exception ignored) {}
+        });
+
+        // Sort newest first, cap at limit
+        events.sort((a, b) -> {
+            String ta = (String) a.get("createdAt");
+            String tb = (String) b.get("createdAt");
+            if (ta == null || ta.isEmpty()) return 1;
+            if (tb == null || tb.isEmpty()) return -1;
+            return tb.compareTo(ta);
+        });
+
+        return ResponseEntity.ok(events.subList(0, Math.min(limit, events.size())));
+    }
+
+    // ========== Admin Force-Complete (stuck transaction recovery) ===========
+
+    /**
+     * Force-completes a rental transaction that is stuck at PARTIALLY_RELEASED or
+     * any intermediate state where Stripe has already settled but the DB status
+     * was never advanced to RENT_COMPLETED.
+     *
+     * Use when: seller's "Mark Returned" button has disappeared (e.g. after a
+     * non-critical post-capture exception corrupted the status) and the normal
+     * finalizeRefund flow is unreachable from the UI.
+     */
+    @PostMapping("/transactions/{id}/force-complete")
+    public ResponseEntity<?> forceCompleteTransaction(@PathVariable String id) {
+        Transaction tx = transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found: " + id));
+
+        Transaction.TransactionStatus prev = tx.getStatus();
+        tx.setStatus(Transaction.TransactionStatus.RENT_COMPLETED);
+        tx.setUpdatedAt(java.time.Instant.now());
+        transactionRepository.save(tx);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Transaction force-completed by admin",
+                "id", id,
+                "previousStatus", prev != null ? prev.name() : "null",
+                "newStatus", "RENT_COMPLETED"
+        ));
+    }
+
+    /**
+     * Bulk-update deposit percentages.
+     * Body: [ { "category": "Electronics", "depositPercentage": 90 }, ... ]
+     */
+    @PutMapping("/deposit-config")
+    public ResponseEntity<?> updateDepositConfig(@RequestBody List<Map<String, Object>> updates) {
+        for (Map<String, Object> update : updates) {
+            String category = (String) update.get("category");
+            int pct = ((Number) update.get("depositPercentage")).intValue();
+            if (pct < 0 || pct > 100) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Percentage must be 0–100 for category: " + category));
+            }
+            CategoryDepositConfig cfg = depositConfigRepository.findByCategory(category)
+                    .orElse(CategoryDepositConfig.builder().category(category).build());
+            cfg.setDepositPercentage(pct);
+            cfg.setUpdatedAt(Instant.now());
+            depositConfigRepository.save(cfg);
+        }
+        return ResponseEntity.ok(depositConfigRepository.findAll());
     }
 }
