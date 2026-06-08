@@ -50,12 +50,25 @@ public class UserService {
         return convertToResponse(user);
     }
 
-    // ✅ NEW METHOD: Fetch single user by ID
+    // ✅ Fetch single user by ID
     public UserResponseDTO getUserById(String id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + id));
 
         return convertToResponse(user);
+    }
+
+    // ✅ Update password for the currently authenticated user
+    public void updatePassword(String email, String newPassword) {
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("Password must be at least 8 characters");
+        }
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setUpdatedAt(Instant.now());
+        userRepository.save(user);
     }
 
     private UserResponseDTO convertToResponse(User user) {
