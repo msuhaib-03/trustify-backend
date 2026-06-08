@@ -490,6 +490,18 @@ public class AdminController {
         tx.setUpdatedAt(java.time.Instant.now());
         transactionRepository.save(tx);
 
+        // Sync listing status: a forced-complete rental returns the item to the platform;
+        // a forced-complete sale removes it permanently.
+        if (tx.getListingId() != null) {
+            listingRepository.findById(tx.getListingId()).ifPresent(l -> {
+                Listing.ListingStatus newStatus = tx.getType() == Transaction.TransactionType.RENT
+                        ? Listing.ListingStatus.ACTIVE   // rental done — item available again
+                        : Listing.ListingStatus.SOLD;    // sale completed — item gone
+                l.setStatus(newStatus);
+                listingRepository.save(l);
+            });
+        }
+
         return ResponseEntity.ok(Map.of(
                 "message", "Transaction force-completed by admin",
                 "id", id,
@@ -584,6 +596,13 @@ public class AdminController {
                     tx.setStatus(Transaction.TransactionStatus.REFUNDED);
                     tx.setUpdatedAt(Instant.now());
                     transactionRepository.save(tx);
+                    // Buyer refunded — item never changed hands; restore to available
+                    if (tx.getListingId() != null) {
+                        listingRepository.findById(tx.getListingId()).ifPresent(l -> {
+                            l.setStatus(Listing.ListingStatus.ACTIVE);
+                            listingRepository.save(l);
+                        });
+                    }
                 }
                 dispute.setStatus("RESOLVED");
 
@@ -601,6 +620,18 @@ public class AdminController {
                     tx.setStatus(Transaction.TransactionStatus.RELEASED);
                     tx.setUpdatedAt(Instant.now());
                     transactionRepository.save(tx);
+                    // Payment released to seller: if sale → mark SOLD; if rent → item available again
+                    if (tx.getListingId() != null) {
+                        final Transaction.TransactionType txType = tx.getType();
+                        final String txListingId = tx.getListingId();
+                        listingRepository.findById(txListingId).ifPresent(l -> {
+                            Listing.ListingStatus newStatus = txType == Transaction.TransactionType.SALE
+                                    ? Listing.ListingStatus.SOLD
+                                    : Listing.ListingStatus.ACTIVE;
+                            l.setStatus(newStatus);
+                            listingRepository.save(l);
+                        });
+                    }
                 }
                 dispute.setStatus("RESOLVED");
 
@@ -620,6 +651,13 @@ public class AdminController {
                     tx.setStatus(Transaction.TransactionStatus.REFUNDED);
                     tx.setUpdatedAt(Instant.now());
                     transactionRepository.save(tx);
+                    // Partial refund — transaction closed; restore listing to available
+                    if (tx.getListingId() != null) {
+                        listingRepository.findById(tx.getListingId()).ifPresent(l -> {
+                            l.setStatus(Listing.ListingStatus.ACTIVE);
+                            listingRepository.save(l);
+                        });
+                    }
                 }
                 dispute.setStatus("RESOLVED");
                 dispute.setRefundAmountCents(refundAmountCents);

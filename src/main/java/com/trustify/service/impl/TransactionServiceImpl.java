@@ -8,10 +8,7 @@ import com.stripe.model.Transfer;
 import com.stripe.param.*;
 import com.trustify.dto.*;
 import com.trustify.model.*;
-import com.trustify.repository.DisputeRepository;
-import com.trustify.repository.PaymentEventRepository;
-import com.trustify.repository.TransactionRepository;
-import com.trustify.repository.UserRepository;
+import com.trustify.repository.*;
 import com.trustify.service.EmailService;
 import com.trustify.service.FraudService;
 import com.trustify.service.TimelineLogService;
@@ -39,6 +36,7 @@ public class TransactionServiceImpl implements TransactionService {
     private final FraudService fraudService;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final ListingRepository listingRepository;
 
     @Value("${STRIPE_SECRET_KEY}")
     private String stripeSecret;
@@ -157,6 +155,13 @@ public class TransactionServiceImpl implements TransactionService {
                     .build();
 
             transactionRepository.save(tx);
+
+            // For rentals, mark the listing as RENTED so it's hidden from browse
+            // until the item is returned. For sales it stays ACTIVE until the buyer
+            // confirms receipt (requestRelease), at which point it becomes SOLD.
+            if (req.getType() == Transaction.TransactionType.RENT) {
+                updateListingStatus(req.getListingId(), Listing.ListingStatus.RENTED);
+            }
 
             eventRepository.save(
                     PaymentEvent.builder()
@@ -318,6 +323,8 @@ public class TransactionServiceImpl implements TransactionService {
             );
             // capture() re-reads the tx; PENDING_RELEASE is in its allowed-status list.
             this.capture(id, userId, tx.getAuthorizedAmountCents());
+            // Item sold — remove it from browse permanently
+            updateListingStatus(tx.getListingId(), Listing.ListingStatus.SOLD);
             return;
         }
 
@@ -734,6 +741,16 @@ public class TransactionServiceImpl implements TransactionService {
                     TimelineLog.ActionType.TRANSACTION_COMPLETED,
                     TimelineLog.ActorType.SYSTEM
             );
+            // If a rental was in progress when the PI was cancelled, restore the listing
+            // so it's available again. Sales never reach RENTED so this is safe to check.
+            if (tx.getListingId() != null && tx.getType() == Transaction.TransactionType.RENT) {
+                listingRepository.findById(tx.getListingId()).ifPresent(l -> {
+                    if (l.getStatus() == Listing.ListingStatus.RENTED) {
+                        l.setStatus(Listing.ListingStatus.ACTIVE);
+                        listingRepository.save(l);
+                    }
+                });
+            }
         });
     }
 
@@ -831,6 +848,9 @@ public class TransactionServiceImpl implements TransactionService {
         tx.setStatus(Transaction.TransactionStatus.RENT_COMPLETED);
         tx.setUpdatedAt(Instant.now());
         transactionRepository.save(tx);
+
+        // Item returned (with damage) — make it available for rent again
+        updateListingStatus(tx.getListingId(), Listing.ListingStatus.ACTIVE);
 
         eventRepository.save(PaymentEvent.builder()
                 .transactionId(tx.getId())
@@ -934,6 +954,9 @@ public class TransactionServiceImpl implements TransactionService {
         tx.setUpdatedAt(Instant.now());
         transactionRepository.save(tx);
 
+        // Item returned — put it back on the platform for future rentals
+        updateListingStatus(tx.getListingId(), Listing.ListingStatus.ACTIVE);
+
         eventRepository.save(PaymentEvent.builder()
                 .transactionId(tx.getId())
                 .type("RENTAL_FINALIZED")
@@ -1002,6 +1025,19 @@ public class TransactionServiceImpl implements TransactionService {
         RefundCreateParams build() {
             return builder.build();
         }
+    }
+
+    // ─── Listing status helper ───────────────────────────────────────────────
+    /**
+     * Updates the status of the associated listing.
+     * Silently no-ops if the listing doesn't exist or listingId is null.
+     */
+    private void updateListingStatus(String listingId, Listing.ListingStatus newStatus) {
+        if (listingId == null) return;
+        listingRepository.findById(listingId).ifPresent(l -> {
+            l.setStatus(newStatus);
+            listingRepository.save(l);
+        });
     }
 
     // ─── Rental end-date helper ───────────────────────────────────────────────
