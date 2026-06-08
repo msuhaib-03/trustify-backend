@@ -23,6 +23,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -72,6 +73,9 @@ public class TransactionServiceImpl implements TransactionService {
                     .depositCents(req.getDepositCents())
                     .currency(req.getCurrency() != null ? req.getCurrency() : "usd")
                     .status(Transaction.TransactionStatus.MANUAL_REVIEW)
+                    .rentalDurationUnits(req.getRentalDurationUnits())
+                    .rentalStartDate(req.getType() == Transaction.TransactionType.RENT ? LocalDate.now() : null)
+                    .rentalEnd(computeRentalEnd(req))
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -139,12 +143,15 @@ public class TransactionServiceImpl implements TransactionService {
                     .buyerEmail(buyer.getEmail())
                     .sellerEmail(seller.getEmail())
                     .type(req.getType())
-                    .amountCents(req.getAmountCents())      // rental fee only (what seller earns)
+                    .amountCents(req.getAmountCents())     // rental fee × duration (what seller earns)
                     .depositCents(req.getDepositCents())    // deposit only (returned to buyer)
                     .currency(pi.getCurrency())
                     .status(Transaction.TransactionStatus.AUTHORIZED)
                     .stripePaymentIntentId(pi.getId())
                     .authorizedAmountCents(totalPiAmount)   // full PI amount (fee + deposit)
+                    .rentalDurationUnits(req.getRentalDurationUnits())
+                    .rentalStartDate(req.getType() == Transaction.TransactionType.RENT ? LocalDate.now() : null)
+                    .rentalEnd(computeRentalEnd(req))
                     .createdAt(Instant.now())
                     .updatedAt(Instant.now())
                     .build();
@@ -995,6 +1002,25 @@ public class TransactionServiceImpl implements TransactionService {
         RefundCreateParams build() {
             return builder.build();
         }
+    }
+
+    // ─── Rental end-date helper ───────────────────────────────────────────────
+    /**
+     * Computes the expected rental end date from the request.
+     * For PER_DAY listings: today + N days.
+     * For PER_HOUR listings: today + ceil(N / 24) days (stored as LocalDate — no time component).
+     * Returns null for sale transactions or when duration is not set.
+     */
+    private LocalDate computeRentalEnd(CreateTransactionRequest req) {
+        if (req.getType() != Transaction.TransactionType.RENT) return null;
+        if (req.getRentalDurationUnits() == null || req.getRentalDurationUnits() <= 0) return null;
+        int units = req.getRentalDurationUnits();
+        if ("PER_HOUR".equalsIgnoreCase(req.getRentalPeriod())) {
+            // Convert hours to days (ceiling) for LocalDate storage
+            return LocalDate.now().plusDays((long) Math.ceil(units / 24.0));
+        }
+        // Default: PER_DAY
+        return LocalDate.now().plusDays(units);
     }
 
 

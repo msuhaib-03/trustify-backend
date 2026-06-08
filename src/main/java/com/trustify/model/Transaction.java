@@ -52,6 +52,8 @@ public class Transaction {
     private Long platformFeeCents;
     private String sellerStripeAccountId;
 
+    private Integer rentalDurationUnits; // number of hours or days, depending on listing.rentalPeriod
+
     private LocalDateTime shippedAt;
     private LocalDate rentalStartDate;
     private LocalDate rentalEnd;
