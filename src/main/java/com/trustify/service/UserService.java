@@ -71,6 +71,8 @@ public class UserService {
         userRepository.save(user);
     }
 
+    // could add more methods if needed for user profile.
+
     private UserResponseDTO convertToResponse(User user) {
         return UserResponseDTO.builder()
                 .id(user.getId())

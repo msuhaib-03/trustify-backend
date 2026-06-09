@@ -56,7 +56,6 @@ public class TransactionServiceImpl implements TransactionService {
                 .or(() -> userRepository.findByEmail(req.getSellerId()))
                 .orElseThrow(() -> new RuntimeException("Seller not found: " + req.getSellerId()));
 
-        // basic anti-fraud checks; replace with your real logic
         //if (isBlacklisted(req.getBuyerId()) || !isSellerVerified(req.getSellerId())) --> old logic before current fraud + rating system
         if(buyer.getFraudScore() > 70 || seller.getFraudScore() > 70)
         {
