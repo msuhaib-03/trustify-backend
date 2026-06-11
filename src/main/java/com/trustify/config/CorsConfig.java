@@ -26,7 +26,6 @@ public class CorsConfig {
                 "https://trustify-pk.tech",
                 "https://www.trustify-pk.tech"
         ));
-
         //Allow all HTTP methods
         corsConfig.addAllowedMethod("*");
 
