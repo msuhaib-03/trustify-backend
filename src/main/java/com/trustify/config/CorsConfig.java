@@ -22,6 +22,7 @@ public class CorsConfig {
                 "http://localhost:3001",
                 "https://v0-trustify-peach.vercel.app",
                 "https://trustify-frontend-nine.vercel.app",
+                "https://trustify-marketplace.vercel.app",
                 "https://trustify-pk.tech",
                 "https://www.trustify-pk.tech"
         ));
