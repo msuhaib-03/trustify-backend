@@ -76,7 +76,7 @@ public class AuthController {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setRole(User.Role.USER);
-
+        user.setCreatedAt(Instant.now());
         userRepository.save(user);
         String token = jwtUtil.generateToken(request.getEmail());
 

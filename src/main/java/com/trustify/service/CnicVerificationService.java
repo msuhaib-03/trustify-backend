@@ -105,8 +105,8 @@ public class CnicVerificationService {
         // MARK USER AS VERIFIED IN USER PROFILE
         user.setVerified(true);
 
-        // OPTIONAL: REWARD USER FOR SUCCESSFUL VERIFICATION
-        user.setTrustRating(Math.max(5.0,user.getTrustRating() + 20)); // Increase trust rating by 20 points for successful verification, max 100.
+        // REWARD USER FOR SUCCESSFUL VERIFICATION — cap at 5.0 (trust rating is 1.0–5.0 star scale)
+        user.setTrustRating(5.0);
 
         userRepository.save(user);
 

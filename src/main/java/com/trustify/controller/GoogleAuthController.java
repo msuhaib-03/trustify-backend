@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -118,6 +119,7 @@ public class GoogleAuthController {
                 // set role, status defaults etc. (adapt to your model)
                 user.setRole(User.Role.USER); // if your Role is enum; adapt accordingly
                 user.setStatus(User.AccountStatus.ACTIVE);
+                user.setCreatedAt(Instant.now());
                 userRepository.save(user);
             }
 
